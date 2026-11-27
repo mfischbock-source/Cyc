@@ -54,7 +54,7 @@
       </div>
 
       {(metodosCliente.length > 0 || otrosMetodos.length > 0) && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 13 }}>
-        <label htmlFor="param-copiar" className="v2-sub">Copiar desde un método guardado:</label>
+        <label htmlFor="param-copiar" className="v2-sub">Copiar de un método anterior:</label>
         <select id="param-copiar" value="" onChange={function (e) { cargarDeMetodo(e.target.value); }} style={V2.estiloInput}>
           <option value="">Elegir…</option>
           {metodosCliente.length > 0 && <optgroup label={"De " + props.cliente}>

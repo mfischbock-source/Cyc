@@ -375,21 +375,16 @@
   function BarraAcciones(props) {
     var n = props.seleccionCount;
     var selMetodo = <select value={props.metodoId} onChange={function (e) { props.setMetodoId(e.target.value); }}>
-      <option value="">Elegir método…</option>
       <option value={MODO_CLIENTE}>Según parámetro del cliente</option>
       <option value={MODO_MEDIDA}>Análisis a medida (escribir prompt)</option>
-      {props.metodos.length > 0 && <optgroup label="Métodos guardados">
-        {props.metodos.map(function (m) { return <option key={m.id} value={m.id}>{m.titulo}</option>; })}
-      </optgroup>}
     </select>;
     if (!n) {
       // Sin tildadas: el método igual se puede elegir (define qué muestra la columna Análisis y el botón "Analizar" de cada fila).
       if (!props.hayResultado) return null;
       return <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 10px", fontSize: 13, color: V2.C.muted }}>
         <span>Método de análisis:</span>{selMetodo}
-        <span className="v2-sub">{props.metodoId === MODO_CLIENTE ? "Cada llamada se analiza con el prompt de su cliente (Configuración → Parámetros de análisis por cliente)."
-          : props.metodoId === MODO_MEDIDA ? "Escribí abajo el prompt: se usa solo para este análisis."
-          : "La columna Análisis muestra los resultados de este método. Tildá llamadas para analizar varias juntas."}</span>
+        <span className="v2-sub">{props.metodoId === MODO_MEDIDA ? "Escribí abajo el prompt: se usa solo para este análisis."
+          : "Cada llamada se analiza con el prompt de su cliente (Configuración → Parámetros de análisis por cliente)."}</span>
       </div>;
     }
     var estMin = Math.max(1, Math.round(n * 30 / 60));
@@ -561,8 +556,8 @@
     var stSel = useState({}); var seleccion = stSel[0], setSeleccion = stSel[1];
     var stExp = useState(""); var filaExpandida = stExp[0], setFilaExpandida = stExp[1];
 
-    var stMetodos = useState([]); var metodos = stMetodos[0], setMetodos = stMetodos[1];
-    var stMetodoId = useState(function () { try { return localStorage.getItem(LS_METODO) || MODO_CLIENTE; } catch (e) { return MODO_CLIENTE; } });
+    // Solo hay dos modos (los "Métodos de análisis" guardados se sacaron el 27/11/2026): cualquier otro valor guardado vuelve a "por cliente".
+    var stMetodoId = useState(function () { var v = ""; try { v = localStorage.getItem(LS_METODO) || ""; } catch (e) {} return v === MODO_MEDIDA ? MODO_MEDIDA : MODO_CLIENTE; });
     var metodoId = stMetodoId[0], setMetodoIdRaw = stMetodoId[1];
     var setMetodoId = function (id) { setMetodoIdRaw(id); try { localStorage.setItem(LS_METODO, id); } catch (e) {} };
     var stParams = useState({}); var paramsCliente = stParams[0], setParamsCliente = stParams[1];   // cliente -> {prompt,…}
@@ -587,20 +582,6 @@
     useEffect(function () {
       V2.api(V2.config.api.catalogo, { accion: "clientes" }).then(function (d) { setCatalogoClientes(d.clientes || []); })
         .catch(function (e) { setErrBusq("No se pudo cargar el catálogo de clientes: " + ((e && e.message) || e)); });
-    }, []);
-
-    // Ordenamos en el cliente (no con .orderBy("titulo") encadenado al where): ese combo pide un índice
-    // compuesto que el proyecto no tiene creado, y fallar en silencio dejaría el desplegable vacío.
-    // onSnapshot (no .get()): la pantalla queda montada, así que un método creado/importado en otra
-    // pestaña tiene que aparecer acá sin recargar.
-    useEffect(function () {
-      return V2.db.collection(V2.config.col.metodos).where("activo", "==", true).onSnapshot(
-        function (sn) {
-          var arr = sn.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
-          arr.sort(function (a, b) { return String(a.titulo || "").localeCompare(String(b.titulo || "")); });
-          setMetodos(arr);
-        },
-        function (e) { setMetodos([]); setErrBusq("No se pudieron cargar los métodos de análisis: " + ((e && e.message) || e)); });
     }, []);
 
     // Parámetros de análisis por cliente (colección chica: un doc por cliente).
@@ -686,7 +667,7 @@
       if (!resultado || !resultado.filas || !metodoId) return;
       var to = setTimeout(function () { cargarResultadosDePagina(resultado.filas, resolverMetodo); }, metodoId === MODO_MEDIDA ? 700 : 0);
       return function () { clearTimeout(to); };
-    }, [metodoId, paramsCliente, promptMedida, metodos]);
+    }, [metodoId, paramsCliente, promptMedida]);
 
     var onToggleSel = function (f) { setSeleccion(function (prev) { var n = Object.assign({}, prev); if (n[f.grabacion]) delete n[f.grabacion]; else n[f.grabacion] = true; return n; }); };
     var onToggleTodasPagina = function (seleccionables, marcar) {
@@ -707,8 +688,7 @@
       setAudioFaltante(function (p) { var n = Object.assign({}, p); delete n[grab]; return n; });
     };
 
-    var metodoActual = metodos.filter(function (m) { return m.id === metodoId; })[0];
-    var tituloMetodo = metodoId === MODO_CLIENTE ? "Por cliente" : metodoId === MODO_MEDIDA ? "A medida" : (metodoActual ? metodoActual.titulo : "");
+    var tituloMetodo = metodoId === MODO_MEDIDA ? "A medida" : "Por cliente";
 
     // Qué prompt corresponde a cada llamada según el método elegido. Devuelve
     // {id, titulo, prompt, cliente, modo} o {falta, ayuda} si no se puede analizar.
@@ -722,22 +702,8 @@
         if (!promptMedida.trim()) return { falta: "Escribí el prompt", ayuda: "Completá el prompt a medida arriba de la grilla." };
         return { id: "medida-" + V2.hashTexto(promptMedida.trim()), titulo: "A medida", prompt: promptMedida.trim(), cliente: fila.cliente, modo: "medida" };
       }
-      if (!metodoActual) return { falta: "Elegí un método" };
-      return { id: metodoActual.id, titulo: metodoActual.titulo, prompt: metodoActual.prompt, cliente: metodoActual.cliente || fila.cliente, modo: "metodo" };
+      return { falta: "Elegí un método" };
     };
-
-    // Un solo cliente filtrado → se elige solo su método (se puede cambiar a mano: solo se re-aplica si cambia el cliente).
-    var autoClienteRef = useRef("");
-    useEffect(function () {
-      if (metodoId === MODO_CLIENTE || metodoId === MODO_MEDIDA) return;   // esos modos ya resuelven por cliente o por prompt propio
-      if (filtros.clientes.length !== 1) { autoClienteRef.current = ""; return; }
-      var cli = filtros.clientes[0];
-      if (autoClienteRef.current === cli) return;
-      var m = metodos.filter(function (x) { return x.cliente === cli; })[0];
-      if (!m) return;                       // todavía no cargaron los métodos, o ese cliente no tiene uno
-      autoClienteRef.current = cli;
-      setMetodoId(m.id);
-    }, [filtros.clientes, metodos]);
 
     // El contrato manda {error, codigo} con HTTP 4xx/5xx — V2.api ya lo convierte en excepción con .codigo.
     // Por eso el chequeo de crédito agotado va en el catch() de analizarFilaSegura, no sobre una respuesta "ok".
@@ -881,7 +847,7 @@
           onBuscar={onBuscar} onLimpiar={onLimpiar} buscando={buscando} />
 
         <div style={{ minWidth: 0 }}>
-          {pedido && pedido.etiqueta && <V2.Aviso tipo="info">Llamadas de <b>{pedido.etiqueta}</b> buscadas directo en Neotel: están todas, las haya analizado o no el cron. Elegí un método y tocá “Analizar” en las que quieras.</V2.Aviso>}
+          {pedido && pedido.etiqueta && <V2.Aviso tipo="info">Llamadas de <b>{pedido.etiqueta}</b> buscadas directo en Neotel: están todas, las haya analizado o no el cron. Tocá “Analizar” en las que quieras.</V2.Aviso>}
           {errBusq && <V2.Aviso tipo="error" onCerrar={function () { setErrBusq(""); }}>{errBusq}</V2.Aviso>}
           {avisoGeneral && <V2.Aviso tipo="alerta" onCerrar={function () { setAvisoGeneral(""); pausaRef.current = false; }}>{avisoGeneral}</V2.Aviso>}
 
@@ -889,7 +855,7 @@
 
           {resultado && <IndicadoresBusqueda total={resultado.total} filas={filas} resultadosMap={resultadosMap} metodoId={metodoId} resolver={resolverMetodo} />}
 
-          <BarraAcciones seleccionCount={seleccionCount} hayResultado={!!resultado && !buscando} metodos={metodos} metodoId={metodoId} setMetodoId={setMetodoId}
+          <BarraAcciones seleccionCount={seleccionCount} hayResultado={!!resultado && !buscando} metodoId={metodoId} setMetodoId={setMetodoId}
             confirmando={confirmando} onPedirAnalizar={onPedirAnalizar} onConfirmarAnalizar={onConfirmarAnalizar} onCancelarConfirmacion={onCancelarConfirmacion}
             colaActiva={!!progreso} progreso={progreso || { hechas: 0, total: 0 }} onCancelarCola={onCancelarCola}
             onDescargar={onDescargar} onDestildar={onDestildar} promptMedidaListo={!!promptMedida.trim()} />

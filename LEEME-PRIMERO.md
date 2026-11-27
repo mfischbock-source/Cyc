@@ -11,7 +11,7 @@ Descomprimí la carpeta, abrila con Claude y pedile lo que quieras. Claude lee `
 | Buscar y analizar (audios) | `htdocs/v2/js/buscar.jsx` + `htdocs/v2/api/buscar.php`, `catalogo.php`, `zip.php` |
 | Control interno | `htdocs/v2/js/control.jsx` |
 | Capacitación (cursos y seguimiento) | `htdocs/v2/js/capacitacion.jsx` (los gestores la hacen en `htdocs/capacitacion.html`) |
-| Métodos de análisis (prompts) | `htdocs/v2/js/metodos.jsx` |
+| Métodos de análisis (prompts) | Sacado del menú el 27/11/2026: `htdocs/v2/js/metodos.jsx` queda sin cargar |
 | Parámetros de análisis por cliente | `htdocs/v2/js/parametros.jsx` (se usan en `buscar.jsx`) |
 | Usuarios e invitaciones / ingresos | `htdocs/v2/js/usuarios.jsx`, `ingresos.jsx` |
 | Menú, login, permisos por pantalla | `htdocs/v2/js/app.jsx`, `nucleo.jsx` |
