@@ -89,11 +89,22 @@
     return out;
   }
   // Bracket visual (maqueta): ok >=80 · av (aviso) >=70 · mal <70 · na = no evaluable.
+  // Calificación según la escala de Configuración → Calificación del audio (V2.calificar en nucleo.jsx).
   function claseScore(r) {
     if (!r || r.es_valida === false || typeof r.score !== "number") return "v2-score v2-score-na";
-    return "v2-score " + (r.score >= 80 ? "v2-score-ok" : r.score >= 70 ? "v2-score-av" : "v2-score-mal");
+    return "v2-score";
   }
-  function colorScore(s) { return s === null || typeof s !== "number" ? V2.C.muted : s >= 80 ? V2.C.ok : s >= 70 ? V2.C.warn : V2.C.danger; }
+  function estiloNivel(score) {
+    var n = V2.calificar(score);
+    return n ? { background: n.color + "14", color: n.color, borderColor: n.color + "55" } : {};
+  }
+  function colorScore(s) { var n = V2.calificar(s); return n ? n.color : V2.C.muted; }
+  function nombreNivel(s) { var n = V2.calificar(s); return n ? n.nombre : "Sin calificación"; }
+  // ¿Los criterios vienen como cumple / no cumple (100 / 0)? (parámetros con tabla de temas)
+  function esBinario(an) {
+    var cr = Array.isArray(an && an.criterios) ? an.criterios : [];
+    return cr.length > 0 && cr.every(function (c) { return !c || c.aplica === false || c.puntaje === 0 || c.puntaje === 100; });
+  }
 
   // ═══════════════════════════ Sub-componentes de filtros ═══════════════════════════════
 
@@ -248,15 +259,16 @@
     });
     var conScore = ultimos.filter(function (r) { return r.es_valida !== false && typeof r.score === "number"; });
     var prom = conScore.length ? Math.round(conScore.reduce(function (s, r) { return s + r.score; }, 0) / conScore.length) : null;
-    var riesgo = conScore.filter(function (r) { return r.score < 70; }).length;
+    var niveles = V2.ordenarNiveles(V2.niveles), bajo = niveles[0];
+    var riesgo = conScore.filter(function (r) { var n = V2.calificar(r.score); return n && n.nombre === bajo.nombre; }).length;
     var item = function (val, label, title) {
       return <div className="v2-kpi" title={title}><b>{val === null ? "—" : val}</b><span>{label}</span></div>;
     };
     return <div className="v2-kpis">
       {item(props.total, "llamadas encontradas")}
       {item(ultimos.length, "ya analizadas", "En esta página, con cualquier tipo de análisis")}
-      {item(prom, "score promedio", "Promedio del último análisis de cada llamada, en esta página")}
-      {item(riesgo, "en riesgo (<70)", "De las analizadas en esta página")}
+      {item(prom === null ? null : (prom + "%"), "cumplimiento promedio", "Promedio del último análisis de cada llamada, en esta página")}
+      {item(riesgo, "calificadas “" + bajo.nombre + "”", "De las analizadas en esta página")}
     </div>;
   }
 
@@ -295,7 +307,7 @@
     }
     var s = typeof r.score === "number" ? r.score : null;
     if (s === null) return <button type="button" className={claseScore(r)} title={tit} onClick={props.onClick}>Sin score</button>;
-    return <button type="button" className={claseScore(r)} title={tit} onClick={props.onClick}>{Math.round(s)} · {V2.scoreLabel(s)}</button>;
+    return <button type="button" className={claseScore(r)} style={estiloNivel(s)} title={tit + " · " + Math.round(s) + "% de cumplimiento"} onClick={props.onClick}>{nombreNivel(s)} · {Math.round(s)}%</button>;
   }
 
   var estiloBotonAnalizar = { font: "inherit", fontSize: 12, fontWeight: 600, color: V2.C.green, background: "none", border: "1px dashed " + V2.C.paleB, borderRadius: 6, padding: "3px 9px", cursor: "pointer" };
@@ -453,7 +465,7 @@
     return <V2.Modal titulo={n === 1 ? "Analizar llamada" : ("Analizar " + n + " llamadas")} onCerrar={props.onCerrar} ancho={620}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="v2-sub">Elegí con qué prompt se analiza{n === 1 ? " la llamada" : "n las llamadas"}.</div>
-        {opcion(MODO_CLIENTE, "Parámetro de análisis por cliente", "Cada llamada se analiza con el prompt definido para su cliente en Configuración.")}
+        {opcion(MODO_CLIENTE, "Parámetro de análisis por cliente", "Cada llamada se revisa con la tabla de temas y el contexto de su cliente, y se califica según el % de temas cumplidos.")}
         {esCliente && <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, padding: "0 4px" }}>
           {clientes.map(function (c) {
             var ok = tieneParam(c);
@@ -466,7 +478,7 @@
             {V2.puede("metodos") ? <span>Podés definirlo en <a style={{ cursor: "pointer" }} onClick={function () { props.onCerrar(); V2.irA("parametros"); }}>Configuración → Parámetros de análisis por cliente</a>.</span> : "Pedile a un administrador que lo defina."}
           </div>}
         </div>}
-        {opcion(MODO_MEDIDA, "Análisis a medida", "Escribís ahora el prompt; se usa para todas las llamadas elegidas.")}
+        {opcion(MODO_MEDIDA, "Análisis a medida", "Escribís ahora qué revisar; se usa para todas las llamadas elegidas y se califica igual, por % cumplido.")}
         {!esCliente && <div>
           <textarea id="buscar-prompt-medida" aria-label="Prompt del análisis a medida" value={props.promptMedida} onChange={function (e) { props.setPromptMedida(e.target.value); }} rows={6} autoFocus
             placeholder={"Ejemplo: Evaluá si el gestor ofreció el plan de 6 cuotas sin interés (peso 50) y si confirmó el mail del titular (peso 50)."}
@@ -488,12 +500,13 @@
     var an = props.analisis || {};
     var cr = Array.isArray(an.criterios) ? an.criterios : [];
     var escala13 = an.escala === "1-3";
+    var binario = esBinario(an);
     if (!cr.length) return <div className="v2-sub">Este análisis no tiene detalle por criterio.</div>;
-    var pill = function (par, txt) { return <span className="v2-num" style={{ background: par.bg, color: par.fg, padding: "1px 7px", borderRadius: 5 }}>{txt}</span>; };
+    var pill = function (par, txt) { return <span className="v2-num" style={{ background: par.bg, color: par.fg, padding: "1px 7px", borderRadius: 5, whiteSpace: "nowrap" }}>{txt}</span>; };
     var colorNota = function (n) { return n === 3 ? { bg: V2.C.okBg, fg: V2.C.ok } : n === 2 ? { bg: V2.C.warnBg, fg: V2.C.warn } : { bg: V2.C.dangerBg, fg: V2.C.danger }; };
     var colorPuntaje = function (p) { return p >= 80 ? { bg: V2.C.okBg, fg: V2.C.ok } : p >= 70 ? { bg: V2.C.warnBg, fg: V2.C.warn } : { bg: V2.C.dangerBg, fg: V2.C.danger }; };
     return <div className="v2-tabla-caja"><table className="v2-tabla v2-tarjetas">
-      <thead><tr><th>Criterio</th><th>Peso</th><th>Nota</th><th>Comentario / evidencia</th></tr></thead>
+      <thead><tr><th>{binario ? "Tema" : "Criterio"}</th><th>Peso</th><th>{binario ? "Resultado" : "Nota"}</th><th>Comentario / evidencia</th></tr></thead>
       <tbody>
         {cr.map(function (c, i) {
           if (c && c.aplica === false) return <tr key={i}>
@@ -503,6 +516,7 @@
           </tr>;
           var celdaNota = "—";
           if (escala13 && typeof c.nota === "number") celdaNota = pill(colorNota(c.nota), c.nota + "/3 " + (NOTA_LABEL[c.nota] || ""));
+          else if (!escala13 && typeof c.puntaje === "number" && binario) celdaNota = pill(c.puntaje === 100 ? { bg: V2.C.okBg, fg: V2.C.ok } : { bg: V2.C.dangerBg, fg: V2.C.danger }, c.puntaje === 100 ? "✓ Cumple" : "✗ No cumple");
           else if (!escala13 && typeof c.puntaje === "number") celdaNota = pill(colorPuntaje(c.puntaje), c.puntaje);
           return <tr key={i}>
             <td style={{ fontWeight: 600 }}>{c.nombre || c.criterio || ("Criterio " + (i + 1))}</td>
@@ -523,22 +537,101 @@
       <div style={{ background: "#f7faf5", border: "1px solid " + V2.C.border, borderRadius: 10, padding: 12, fontSize: 13, lineHeight: 1.6 }}>
         <b>Motivo:</b> {motivo}. La IA no puntúa llamadas sin conversación real con el titular, para no bajar el score del gestor.
       </div>
+      {r.grabacion && <div style={{ marginTop: 12 }}><BotonDescargarDetalle resultado={r} fila={props.fila} mapaOps={props.mapaOps} /></div>}
     </V2.Modal>;
   }
 
-  function ModalScore(props) { // {resultado, fila, onCerrar}
+  // ── Descarga individual: zip con el audio + detalle.txt que justifica la calificación ──
+  function textoDetalle(r, f, mapaOps) {
+    var an = r.analisis || {}, s = typeof r.score === "number" ? r.score : null;
+    var L = [], linea = function (t) { L.push(t === undefined ? "" : t); };
+    var cr = Array.isArray(an.criterios) ? an.criterios : [], bin = esBinario(an);
+    linea("DASA · Calidad de audios · Detalle de la calificación");
+    linea("======================================================");
+    if (r.es_valida === false) linea("Calificación: NO APTA (" + ((an.motivo_invalida || an.motivo) || "sin motivo") + ")");
+    else linea("Calificación: " + nombreNivel(s) + (s !== null ? (" (" + Math.round(s) + "% de cumplimiento de los temas)") : ""));
+    linea("Análisis: " + (r.metodoTitulo || "—") + " · " + V2.fmtFecha(r.analizadoEn) + (r.analizadoPor ? (" · por " + r.analizadoPor) : ""));
+    linea();
+    linea("LLAMADA");
+    linea("  Cliente: " + (r.cliente || f.cliente || "—") + ((r.cartera || f.cartera) ? (" · " + (r.cartera || f.cartera)) : ""));
+    linea("  Fecha y hora: " + (fmtFechaHora(f.inicio) !== "—" ? fmtFechaHora(f.inicio) : (r.fecha || "—")));
+    linea("  ID de llamada: " + (r.idLlamada || f.idLlamada || "—"));
+    linea("  Gestor: " + V2.nombreOperador(mapaOps, r.usuario || f.usuario));
+    linea("  Deudor: " + (r.titular || f.titular || "—") + " · DNI " + (r.dni || f.dni || "—"));
+    if (f.telefono) linea("  Teléfono: " + f.telefono);
+    linea("  Duración: " + V2.fmtDur(r.durSeg || f.durSeg));
+    linea("  Tipificación: " + (r.tipif || f.tipif || "—"));
+    linea("  Grabación: " + (r.grabacion || f.grabacion || "—"));
+    linea();
+    if (an.analisis) { linea("POR QUÉ ESTA CALIFICACIÓN"); linea("  " + an.analisis); linea(); }
+    if (cr.length) {
+      linea(bin ? "TEMAS REVISADOS" : "CRITERIOS");
+      cr.forEach(function (c) {
+        if (!c) return;
+        var nom = c.nombre || c.criterio || "—";
+        var res = c.aplica === false ? "N/A" : bin ? (c.puntaje === 100 ? "✓ Cumple" : "✗ No cumple") : (typeof c.puntaje === "number" ? (c.puntaje + "/100") : (typeof c.nota === "number" ? (c.nota + "/3") : "—"));
+        linea("  " + res + " · " + nom + (typeof c.peso === "number" ? (" (peso " + c.peso + ")") : ""));
+        if (c.comentario || c.evidencia) linea("      " + (c.comentario || c.evidencia));
+      });
+      linea();
+    }
+    if (an.recomendacion) { linea("RECOMENDACIÓN"); linea("  " + an.recomendacion); linea(); }
+    return L.join("\r\n");
+  }
+  function nombreSeguro(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "x"; }
+  function descargarConDetalle(r, f, mapaOps) {
+    if (!window.JSZip) return Promise.reject(new Error("No se pudo cargar el compresor de archivos (revisá la conexión)."));
+    var grab = r.grabacion || f.grabacion;
+    if (!grab) return Promise.reject(new Error("Esta llamada no tiene grabación."));
+    return fetch(V2.urlAudio(grab), { credentials: "same-origin" }).then(function (resp) {
+      var ct = resp.headers.get("content-type") || "";
+      if (!resp.ok || ct.indexOf("json") >= 0 || ct.indexOf("html") >= 0) throw new Error("No se pudo traer el audio del servidor (puede no estar en el NAS todavía).");
+      return resp.blob();
+    }).then(function (audio) {
+      var zip = new window.JSZip();
+      var nomAudio = String(grab).split(/[\\/]/).pop() || "grabacion.wav";
+      if (!/\.(wav|mp3|gsm|ogg)$/i.test(nomAudio)) nomAudio += (audio.type.indexOf("mpeg") >= 0 ? ".mp3" : ".wav");
+      zip.file(nomAudio, audio);
+      zip.file("detalle.txt", "\ufeff" + textoDetalle(r, f, mapaOps));
+      return zip.generateAsync({ type: "blob" });
+    }).then(function (blob) {
+      var nivel = r.es_valida === false ? "no_apta" : nombreNivel(r.score);
+      var url = URL.createObjectURL(blob), a = document.createElement("a");
+      a.href = url; a.download = "llamada_" + nombreSeguro(r.idLlamada || f.idLlamada || grab) + "_" + nombreSeguro(nivel) + ".zip";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+    });
+  }
+  function BotonDescargarDetalle(props) { // {resultado, fila, mapaOps}
+    var st = useState(""); var estado = st[0], setEstado = st[1];
+    if (!V2.puede("descargar")) return null;
+    var ir = function () {
+      setEstado("…");
+      descargarConDetalle(props.resultado, props.fila || {}, props.mapaOps).then(function () { setEstado("ok"); }, function (e) { setEstado((e && e.message) || "No se pudo descargar."); });
+    };
+    return <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <V2.Boton tipo="secundario" chico disabled={estado === "…"} onClick={ir} title="Baja un .zip con la grabación y un detalle.txt que justifica la calificación">{estado === "…" ? "Preparando…" : "⬇ Descargar audio con detalle"}</V2.Boton>
+      {estado === "ok" && <span className="v2-sub" style={{ display: "inline" }}>Listo.</span>}
+      {estado && estado !== "…" && estado !== "ok" && <span style={{ fontSize: 12, color: V2.C.danger }}>{estado}</span>}
+    </span>;
+  }
+
+  function ModalScore(props) { // {resultado, fila, onCerrar, lista?, onElegir?, mapaOps}
+    V2.useNiveles();
     var r = props.resultado, f = props.fila || {};
-    if (r.es_valida === false) return <ModalNoApta resultado={r} onCerrar={props.onCerrar} />;
+    if (r.es_valida === false) return <ModalNoApta resultado={r} fila={f} mapaOps={props.mapaOps} onCerrar={props.onCerrar} />;
     var an = r.analisis || {};
     var s = typeof r.score === "number" ? r.score : null;
-    var formula = an.escala === "1-3" ? "Score = Σ peso × nota/3 ÷ Σ peso de los que aplican" : "Score = promedio ponderado de puntajes (0-100) de los criterios que aplican";
+    var formula = an.escala === "1-3" ? "Score = Σ peso × nota/3 ÷ Σ peso de los que aplican"
+      : esBinario(an) ? "Cumplimiento = Σ peso de los temas cumplidos ÷ Σ peso de todos los temas"
+      : "Score = promedio ponderado de puntajes (0-100) de los criterios que aplican";
     var fechaAn = r.analizadoEn ? String(r.analizadoEn).slice(0, 10).split("-").reverse().join("/") : "—";
     var dato = function (etiqueta, valor) { return <div><span className="v2-sub" style={{ textTransform: "uppercase", letterSpacing: ".06em" }}>{etiqueta}</span>{valor}</div>; };
-    return <V2.Modal titulo="Cómo se llegó a este score" onCerrar={props.onCerrar} ancho={820}>
+    return <V2.Modal titulo="Cómo se llegó a esta calificación" onCerrar={props.onCerrar} ancho={820}>
       <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-        <span className="v2-num" style={{ fontSize: 30, fontWeight: 500, color: colorScore(s) }}>{s !== null ? Math.round(s) : "—"}</span>
+        <span className="v2-num" style={{ fontSize: 30, fontWeight: 500, color: colorScore(s) }}>{s !== null ? (Math.round(s) + "%") : "—"}</span>
         <div>
-          <div style={{ fontWeight: 700 }}>{s !== null ? V2.scoreLabel(s) : "Sin score"}</div>
+          <div style={{ fontWeight: 700, color: colorScore(s) }}>{s !== null ? nombreNivel(s) : "Sin calificación"}<span className="v2-sub" style={{ display: "inline", fontWeight: 400 }}>{s !== null ? (esBinario(an) ? " · cumplimiento de los temas" : " · puntaje") : ""}</span></div>
           <span className="v2-sub">{r.metodoTitulo || "—"} · analizado el {fechaAn}{r.analizadoPor ? (" por " + r.analizadoPor) : ""}</span>
         </div>
         {props.lista && props.lista.length > 1 && props.onElegir && <label style={{ marginLeft: "auto", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
@@ -564,7 +657,7 @@
       </div>
 
       {an.analisis && <div style={{ background: "#f7faf5", border: "1px solid " + V2.C.border, borderRadius: 10, padding: 12, fontSize: 13, lineHeight: 1.6 }}>
-        <b>Por qué este puntaje.</b> {an.analisis}
+        <b>Por qué esta calificación.</b> {an.analisis}
       </div>}
 
       <TablaCriterios analisis={an} />
@@ -574,6 +667,7 @@
         <b>Recomendación.</b> {an.recomendacion}
       </div>}
 
+      {r.grabacion && <div><BotonDescargarDetalle resultado={r} fila={f} mapaOps={props.mapaOps} /></div>}
       {r.grabacion && <div style={{ background: V2.C.dark, borderRadius: 8, padding: "9px 12px" }}>
         <div style={{ fontSize: 10, color: "rgba(255,255,255,.55)", marginBottom: 6 }}>Audio de la llamada</div>
         <audio controls preload="none" src={V2.urlAudio(r.grabacion)} style={{ width: "100%" }} />
@@ -593,6 +687,7 @@
 
   function PantallaBuscar() {
     var mapaOps = V2.useOperadores();
+    V2.useNiveles();   // re-pinta las calificaciones si cambian en Configuración
 
     // Pedido de otra pantalla (Control interno → "Buscar sus llamadas"): {numeros, desde, hasta, etiqueta}.
     var pedidoRef = useRef(V2.tomarPedido("buscar"));
@@ -750,7 +845,8 @@
       }
       if (modo === MODO_MEDIDA) {
         if (!promptMedida.trim()) return { falta: "Falta el prompt a medida" };
-        return { id: "medida-" + V2.hashTexto(promptMedida.trim()), titulo: "A medida", prompt: promptMedida.trim(), cliente: fila.cliente, modo: "medida" };
+        var pm = promptMedida.trim() + "\n\nSepará lo pedido en temas concretos y devolvé un criterio por tema (peso 1 salvo que se indique otro), con puntaje 100 si el gestor lo cumple y 0 si no lo cumple. En 'comentario' justificá citando lo que se dijo en la llamada.";
+        return { id: "medida-" + V2.hashTexto(promptMedida.trim()), titulo: "A medida", prompt: pm, cliente: fila.cliente, modo: "medida" };
       }
       return { falta: "Elegí el tipo de análisis" };
     };
@@ -787,7 +883,8 @@
         usuario: fila.usuario || "", dni: fila.dni || "", titular: fila.titular || "", tipif: fila.tipif || "", durSeg: fila.durSeg || 0,
         transcripcion: transcripcion, motorTranscripcion: motorTranscripcion || "",
         analisis: analisisObj, score: score, scoreExacto: score, escala: analisisObj.escala || "",
-        etiqueta: (typeof score === "number") ? V2.scoreLabel(score) : "", es_valida: analisisObj.es_valida !== false,
+        etiqueta: (typeof score === "number") ? nombreNivel(score) : "", es_valida: analisisObj.es_valida !== false,
+        calificacion: (typeof score === "number" && analisisObj.es_valida !== false) ? nombreNivel(score) : "", cumplimiento: score,
         analizadoPor: (V2.usuario && (V2.usuario.nombre || V2.usuario.email)) || "", analizadoEn: new Date().toISOString()
       };
       if (metodo.modo === "cliente" || metodo.modo === "medida") { doc.modo = metodo.modo; doc.promptUsado = metodo.prompt; }

@@ -11,6 +11,7 @@
 <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>  <!-- zip del audio + detalle (Buscar y analizar) -->
 <!-- Babel 7.24.7 FIJO: versiones nuevas rompían la app (pantalla en blanco). No usar ?. ni ?? -->
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -24,14 +25,15 @@
 <body>
 <div id="root"><div style="padding:40px;font-family:system-ui;color:#5a7a5a">Cargando…</div></div>
 <!-- ORDEN FIJO: núcleo → pantallas → app (la app monta al final). ?v= = versión: el server cachea .js 1 semana. -->
-<script type="text/babel" data-presets="react" src="js/nucleo.jsx?v=11"></script>
-<script type="text/babel" data-presets="react" src="js/buscar.jsx?v=16"></script>
+<script type="text/babel" data-presets="react" src="js/nucleo.jsx?v=12"></script>
+<script type="text/babel" data-presets="react" src="js/buscar.jsx?v=18"></script>
 <!-- js/metodos.jsx ("Métodos de análisis") se sacó del menú el 27/11/2026: lo reemplazan los Parámetros de análisis por cliente. El archivo queda sin cargar. -->
 <script type="text/babel" data-presets="react" src="js/usuarios.jsx?v=4"></script>
 <script type="text/babel" data-presets="react" src="js/ingresos.jsx?v=1"></script>
 <script type="text/babel" data-presets="react" src="js/control.jsx?v=4"></script>
 <script type="text/babel" data-presets="react" src="js/capacitacion.jsx?v=1"></script>
-<script type="text/babel" data-presets="react" src="js/parametros.jsx?v=3"></script>
-<script type="text/babel" data-presets="react" src="js/app.jsx?v=11"></script>
+<script type="text/babel" data-presets="react" src="js/parametros.jsx?v=4"></script>
+<script type="text/babel" data-presets="react" src="js/calificacion.jsx?v=1"></script>
+<script type="text/babel" data-presets="react" src="js/app.jsx?v=12"></script>
 </body>
 </html>

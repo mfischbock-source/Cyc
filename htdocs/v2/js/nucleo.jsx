@@ -91,6 +91,68 @@ V2.idResultado = function (grabacion, metodoId) { return String(grabacion) + "__
 V2.slugCliente = function (cliente) {
   return String(cliente || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "sin-cliente";
 };
+// ── Parámetro de análisis por cliente: tabla de temas + contexto → prompt para la IA ───────
+// temas: [{tema, detalle, peso}] · contexto: texto libre que afina el análisis.
+// La IA devuelve un criterio por tema con puntaje 100 (cumple) o 0 (no cumple): el % de
+// cumplimiento es el promedio ponderado por peso (calcularScore en buscar.jsx).
+V2.temasValidos = function (temas) {
+  return (temas || []).filter(function (t) { return t && String(t.tema || "").trim(); });
+};
+V2.armarPromptCliente = function (cliente, temas, contexto) {
+  var lista = V2.temasValidos(temas);
+  var txt = "Sos auditor de calidad de un call center de cobranzas. Cliente: " + cliente + ".\n\n";
+  if (String(contexto || "").trim()) txt += "CONTEXTO DEL CLIENTE Y CRITERIOS PARA AFINAR EL ANÁLISIS:\n" + String(contexto).trim() + "\n\n";
+  if (lista.length) {
+    txt += "TEMAS QUE HAY QUE REVISAR EN LA LLAMADA (devolvé un criterio por tema, con este mismo nombre y peso, en este orden):\n";
+    lista.forEach(function (t, i) {
+      txt += (i + 1) + ". " + String(t.tema).trim() + (String(t.detalle || "").trim() ? (": " + String(t.detalle).trim()) : "") + " (peso " + (parseInt(t.peso, 10) > 0 ? parseInt(t.peso, 10) : 1) + ")\n";
+    });
+    txt += "\nPara cada tema: puntaje 100 si el gestor lo cumple y 0 si no lo cumple (no uses valores intermedios). "
+      + "En 'comentario' justificá en una oración, citando entre comillas lo que se dijo en la llamada o aclarando qué faltó. "
+      + "En 'analisis' resumí en 2-3 oraciones por qué la llamada obtiene ese nivel de cumplimiento.";
+  }
+  return txt;
+};
+
+// ── Calificación del audio: niveles según el % de cumplimiento de los temas ───────────────
+// Se configura en Configuración → Calificación del audio (configuracion/calificacion).
+// Cada nivel va desde su "desde" (%) hasta el "desde" del siguiente menos 1.
+V2.COLORES_NIVEL = { rojo: "#c0392b", amarillo: "#b7791f", verde: "#2f8f4e", azul: "#2463a6", gris: "#7b8f7d" };
+V2.NIVELES_DEFECTO = [
+  { nombre: "Malo", desde: 0, color: "rojo" },
+  { nombre: "Bueno", desde: 60, color: "amarillo" },
+  { nombre: "Muy bueno", desde: 81, color: "verde" }
+];
+V2.ordenarNiveles = function (niveles) {
+  return (niveles && niveles.length ? niveles : V2.NIVELES_DEFECTO).slice().sort(function (a, b) { return (+a.desde || 0) - (+b.desde || 0); });
+};
+// {nombre, color(hex), desde, hasta} para un % (0-100), o null si no hay score.
+V2.calificar = function (score, niveles) {
+  if (typeof score !== "number" || isNaN(score)) return null;
+  var s = Math.round(score), lista = V2.ordenarNiveles(niveles || V2.niveles), elegido = lista[0];
+  lista.forEach(function (n) { if (s >= (+n.desde || 0)) elegido = n; });
+  var i = lista.indexOf(elegido), sig = lista[i + 1];
+  return { nombre: elegido.nombre, color: V2.COLORES_NIVEL[elegido.color] || elegido.color || V2.C.muted, desde: +elegido.desde || 0, hasta: sig ? (+sig.desde - 1) : 100 };
+};
+V2.niveles = V2.NIVELES_DEFECTO;
+V2._nivSubs = []; V2._nivUnsub = null;
+// Hook: niveles vigentes (se escuchan en vivo; un solo listener para toda la app).
+V2.useNiveles = function () {
+  var st = useState(V2.niveles); var niv = st[0], setNiv = st[1];
+  useEffect(function () {
+    V2._nivSubs.push(setNiv);
+    if (!V2._nivUnsub && V2.db) {
+      V2._nivUnsub = V2.db.collection("configuracion").doc("calificacion").onSnapshot(function (d) {
+        var x = d && d.exists ? d.data() : null;
+        V2.niveles = (x && x.niveles && x.niveles.length) ? x.niveles : V2.NIVELES_DEFECTO;
+        V2._nivSubs.forEach(function (f) { f(V2.niveles); });
+      }, function () {});
+    }
+    return function () { V2._nivSubs = V2._nivSubs.filter(function (f) { return f !== setNiv; }); };
+  }, []);
+  return niv;
+};
+
 // Hash corto de un texto (identifica un prompt "a medida": mismo texto = mismos resultados guardados).
 V2.hashTexto = function (t) {
   var h = 5381, s = String(t || "");

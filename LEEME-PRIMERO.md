@@ -12,7 +12,8 @@ Descomprimí la carpeta, abrila con Claude y pedile lo que quieras. Claude lee `
 | Control interno | `htdocs/v2/js/control.jsx` |
 | Capacitación (cursos y seguimiento) | `htdocs/v2/js/capacitacion.jsx` (los gestores la hacen en `htdocs/capacitacion.html`) |
 | Métodos de análisis (prompts) | Sacado del menú el 27/11/2026: `htdocs/v2/js/metodos.jsx` queda sin cargar |
-| Parámetros de análisis por cliente | `htdocs/v2/js/parametros.jsx` (se usan en `buscar.jsx`) |
+| Parámetros de análisis por cliente (tabla de temas + contexto) | `htdocs/v2/js/parametros.jsx` (se usan en `buscar.jsx`) |
+| Calificación del audio (escala Malo / Bueno / Muy bueno) | `htdocs/v2/js/calificacion.jsx` + `V2.calificar` en `nucleo.jsx` |
 | Usuarios e invitaciones / ingresos | `htdocs/v2/js/usuarios.jsx`, `ingresos.jsx` |
 | Menú, login, permisos por pantalla | `htdocs/v2/js/app.jsx`, `nucleo.jsx` |
 | Estilos | `htdocs/v2/css/estilos.css` |
