@@ -3,6 +3,10 @@
 // Sintaxis: var + function(){}, SIN ?. ni ??  (Babel 7.24.7 en el navegador).
 (function () {
   var LS_METODO = "dasa_v2_buscar_metodo";
+  var LS_PROMPT_MEDIDA = "dasa_v2_buscar_prompt_medida";
+  // Opciones especiales del selector de método (no son docs de metodos_analisis).
+  var MODO_CLIENTE = "__cliente";   // prompt de parametros_cliente según el cliente de cada llamada
+  var MODO_MEDIDA = "__medida";     // prompt escrito en el momento
   var POR_PAGINA = 100;
   var NOTA_LABEL = { 1: "Deficiente", 2: "Regular", 3: "Bueno" };
 
@@ -193,11 +197,13 @@
     </div>;
   }
 
-  function IndicadoresBusqueda(props) { // {total, filas, resultadosMap, metodoId}
+  function IndicadoresBusqueda(props) { // {total, filas, resultadosMap, metodoId, resolver}
     var analizadas = [];
     (props.filas || []).forEach(function (f) {
       if (f.sinGrabacion || !props.metodoId) return;
-      var r = props.resultadosMap[V2.idResultado(f.grabacion, props.metodoId)];
+      var m = props.resolver(f);
+      if (!m || !m.id) return;
+      var r = props.resultadosMap[V2.idResultado(f.grabacion, m.id)];
       if (r) analizadas.push(r);
     });
     var conScore = analizadas.filter(function (r) { return typeof r.score === "number"; });
@@ -258,7 +264,9 @@
     if (props.audioFaltante) return <span style={{ fontSize: 11, color: V2.C.danger }} title="El servidor no encontró la grabación (ni suelta ni en los ZIP del NAS). Las llamadas del día se copian al NAS de noche.">🔇 Sin audio en el NAS <a onClick={props.onAudioRevisar} style={{ cursor: "pointer" }}>Revisar de nuevo</a></span>;
     if (props.errorFila) return <span style={{ fontSize: 11, color: V2.C.danger }}>{props.errorFila} <a onClick={props.onReintentar} style={{ cursor: "pointer" }}>Reintentar</a></span>;
     if (!props.metodoId) return <span className="v2-sub" title="Elegí un método de análisis en la barra de acciones">Elegí un método</span>;
-    var id = V2.idResultado(f.grabacion, props.metodoId);
+    var m = props.resolver(f);
+    if (!m || !m.id) return <span style={{ fontSize: 11, color: V2.C.warn }} title={(m && m.ayuda) || ""}>{(m && m.falta) || "—"}</span>;
+    var id = V2.idResultado(f.grabacion, m.id);
     var r = props.resultadosMap[id];
     if (r) return <ChipResultado resultado={r} onClick={function () { props.onAbrirModal(r, f); }} />;
     if (!V2.puede("analizar")) return <span className="v2-sub" title="Tu rol no puede disparar análisis">—</span>;
@@ -286,7 +294,7 @@
         </td>
         <td data-label="Gestor">{V2.nombreOperador(props.mapaOps, f.usuario)}</td>
         <td data-label="Análisis">
-          <CeldaAnalisis fila={f} metodoId={props.metodoId} resultadosMap={props.resultadosMap}
+          <CeldaAnalisis fila={f} metodoId={props.metodoId} resolver={props.resolver} resultadosMap={props.resultadosMap}
             procesando={props.procesando} errorFila={props.errorFila} audioFaltante={props.audioFaltante} onAudioRevisar={props.onAudioRevisar}
             onAnalizar={props.onAnalizarUna} onReintentar={props.onReintentarUna} onAbrirModal={props.onAbrirModal} />
         </td>
@@ -318,7 +326,7 @@
             return <FilaResultado key={f.grabacion || f.idLlamada} fila={f} mapaOps={props.mapaOps}
               seleccionada={props.seleccion[f.grabacion]} onToggleSel={function () { props.onToggleSel(f); }}
               expandida={props.filaExpandida === f.grabacion} onTogglePlay={function () { props.onTogglePlay(f.grabacion); }}
-              metodoId={props.metodoId} resultadosMap={props.resultadosMap}
+              metodoId={props.metodoId} resolver={props.resolver} resultadosMap={props.resultadosMap}
               procesando={props.procesandoFila[f.grabacion]} errorFila={props.erroresFila[f.grabacion]}
               audioFaltante={props.audioFaltante[f.grabacion]} onAudioFaltante={function () { props.onAudioFaltante(f.grabacion); }} onAudioRevisar={function () { props.onAudioRevisar(f.grabacion); }}
               onAnalizarUna={function () { props.onAnalizarUna(f); }} onReintentarUna={function () { props.onReintentarUna(f); }}
@@ -332,26 +340,29 @@
 
   function BarraAcciones(props) {
     var n = props.seleccionCount;
-    var selMetodo = <select value={props.metodoId} disabled={!props.metodos.length} onChange={function (e) { props.setMetodoId(e.target.value); }}>
+    var selMetodo = <select value={props.metodoId} onChange={function (e) { props.setMetodoId(e.target.value); }}>
       <option value="">Elegir método…</option>
-      {props.metodos.map(function (m) { return <option key={m.id} value={m.id}>{m.titulo}</option>; })}
+      <option value={MODO_CLIENTE}>Según parámetro del cliente</option>
+      <option value={MODO_MEDIDA}>Análisis a medida (escribir prompt)</option>
+      {props.metodos.length > 0 && <optgroup label="Métodos guardados">
+        {props.metodos.map(function (m) { return <option key={m.id} value={m.id}>{m.titulo}</option>; })}
+      </optgroup>}
     </select>;
     if (!n) {
       // Sin tildadas: el método igual se puede elegir (define qué muestra la columna Análisis y el botón "Analizar" de cada fila).
       if (!props.hayResultado) return null;
       return <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 10px", fontSize: 13, color: V2.C.muted }}>
         <span>Método de análisis:</span>{selMetodo}
-        {!props.metodos.length
-          ? <span>Todavía no hay métodos: creá uno o importá las rúbricas en Configuración → Métodos de análisis.</span>
-          : <span className="v2-sub">La columna Análisis muestra los resultados de este método. Tildá llamadas para analizar varias juntas.</span>}
+        <span className="v2-sub">{props.metodoId === MODO_CLIENTE ? "Cada llamada se analiza con el prompt de su cliente (Configuración → Parámetros de análisis por cliente)."
+          : props.metodoId === MODO_MEDIDA ? "Escribí abajo el prompt: se usa solo para este análisis."
+          : "La columna Análisis muestra los resultados de este método. Tildá llamadas para analizar varias juntas."}</span>
       </div>;
     }
     var estMin = Math.max(1, Math.round(n * 30 / 60));
     return <div className="v2-acciones" role="region" aria-label="Acciones sobre las tildadas">
       <span className="v2-cuenta">{n} tildada{n === 1 ? "" : "s"}</span>
       {selMetodo}
-      {!props.metodos.length && <span style={{ fontSize: 12 }}>Creá un método en Configuración → Métodos de análisis.</span>}
-      {!props.confirmando && V2.puede("analizar") && <V2.Boton disabled={!props.metodoId || props.colaActiva} onClick={props.onPedirAnalizar}>Analizar {n}</V2.Boton>}
+      {!props.confirmando && V2.puede("analizar") && <V2.Boton disabled={!props.metodoId || props.colaActiva || (props.metodoId === MODO_MEDIDA && !props.promptMedidaListo)} onClick={props.onPedirAnalizar}>Analizar {n}</V2.Boton>}
       {props.confirmando && <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <span style={{ fontSize: 12 }}>¿Analizar {n}? ≈{estMin} min.</span>
         <V2.Boton chico onClick={props.onConfirmarAnalizar}>Confirmar</V2.Boton>
@@ -364,6 +375,33 @@
         {props.colaActiva && <a onClick={props.onCancelarCola} style={{ cursor: "pointer", color: "#fff", textDecoration: "underline" }}>Cancelar</a>}
       </span>
     </div>;
+  }
+
+  // Prompt escrito en el momento ("Análisis a medida"). Queda guardado en este navegador como borrador.
+  function PromptMedida(props) { // {valor, onCambiar}
+    return <div className="v2-tarjeta" style={{ marginBottom: 10 }}>
+      <label htmlFor="buscar-prompt-medida" style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Prompt del análisis a medida</label>
+      <div className="v2-sub" style={{ marginBottom: 8 }}>Indicá qué querés evaluar en estas llamadas (criterios y pesos). Si analizás con el mismo texto, se reusan los resultados ya hechos.</div>
+      <textarea id="buscar-prompt-medida" value={props.valor} onChange={function (e) { props.onCambiar(e.target.value); }} rows={6}
+        placeholder={"Ejemplo: Evaluá si el gestor ofreció el plan de 6 cuotas sin interés (peso 50) y si confirmó el mail del titular (peso 50)."}
+        style={Object.assign({}, V2.estiloInput, { width: "100%", boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.5, resize: "vertical" })} />
+    </div>;
+  }
+
+  // Con "Según parámetro del cliente": avisa qué clientes de la página no tienen prompt definido.
+  function AvisoParametros(props) { // {filas, params}
+    var faltan = {};
+    (props.filas || []).forEach(function (f) {
+      if (f.sinGrabacion || !f.cliente) return;
+      var p = props.params[f.cliente];
+      if (!p || !String(p.prompt || "").trim()) faltan[f.cliente] = (faltan[f.cliente] || 0) + 1;
+    });
+    var lista = Object.keys(faltan);
+    if (!lista.length) return null;
+    return <V2.Aviso tipo="alerta">
+      Sin parámetro de análisis: {lista.map(function (c) { return c + " (" + faltan[c] + ")"; }).join(" · ")}. Esas llamadas no se pueden analizar
+      {V2.puede("metodos") ? <span> hasta que lo definas en <a style={{ cursor: "pointer" }} onClick={function () { V2.irA("parametros"); }}>Configuración → Parámetros de análisis por cliente</a>.</span> : " hasta que un administrador lo defina."}
+    </V2.Aviso>;
   }
 
   // ═══════════════════════════ Modal de score ═══════════════════════════════════════════
@@ -454,6 +492,10 @@
         <div style={{ fontSize: 10, color: "rgba(255,255,255,.55)", marginBottom: 6 }}>Audio de la llamada</div>
         <audio controls preload="none" src={V2.urlAudio(r.grabacion)} style={{ width: "100%" }} />
       </div>}
+      {r.promptUsado && <details>
+        <summary style={{ cursor: "pointer", fontWeight: 700, color: V2.C.info, fontSize: 13 }}>Ver prompt usado ({r.modo === "medida" ? "a medida" : "parámetro del cliente"})</summary>
+        <div style={{ fontSize: 12, lineHeight: 1.6, marginTop: 6, background: V2.C.bg, borderRadius: 8, padding: "10px 12px", whiteSpace: "pre-wrap", maxHeight: 220, overflowY: "auto" }}>{r.promptUsado}</div>
+      </details>}
       {r.transcripcion && <details>
         <summary style={{ cursor: "pointer", fontWeight: 700, color: V2.C.info, fontSize: 13 }}>Ver transcripción</summary>
         <div style={{ fontSize: 12, lineHeight: 1.6, marginTop: 6, background: V2.C.bg, borderRadius: 8, padding: "10px 12px", whiteSpace: "pre-wrap", maxHeight: 260, overflowY: "auto" }}>{r.transcripcion}</div>
@@ -486,9 +528,13 @@
     var stExp = useState(""); var filaExpandida = stExp[0], setFilaExpandida = stExp[1];
 
     var stMetodos = useState([]); var metodos = stMetodos[0], setMetodos = stMetodos[1];
-    var stMetodoId = useState(function () { try { return localStorage.getItem(LS_METODO) || ""; } catch (e) { return ""; } });
+    var stMetodoId = useState(function () { try { return localStorage.getItem(LS_METODO) || MODO_CLIENTE; } catch (e) { return MODO_CLIENTE; } });
     var metodoId = stMetodoId[0], setMetodoIdRaw = stMetodoId[1];
     var setMetodoId = function (id) { setMetodoIdRaw(id); try { localStorage.setItem(LS_METODO, id); } catch (e) {} };
+    var stParams = useState({}); var paramsCliente = stParams[0], setParamsCliente = stParams[1];   // cliente -> {prompt,…}
+    var stPM = useState(function () { try { return localStorage.getItem(LS_PROMPT_MEDIDA) || ""; } catch (e) { return ""; } });
+    var promptMedida = stPM[0], setPromptMedidaRaw = stPM[1];
+    var setPromptMedida = function (t) { setPromptMedidaRaw(t); try { localStorage.setItem(LS_PROMPT_MEDIDA, t); } catch (e) {} };
 
     var stResMap = useState({}); var resultadosMap = stResMap[0], setResultadosMap = stResMap[1];
     var stProcFila = useState({}); var procesandoFila = stProcFila[0], setProcesandoFila = stProcFila[1];
@@ -521,6 +567,13 @@
           setMetodos(arr);
         },
         function (e) { setMetodos([]); setErrBusq("No se pudieron cargar los métodos de análisis: " + ((e && e.message) || e)); });
+    }, []);
+
+    // Parámetros de análisis por cliente (colección chica: un doc por cliente).
+    useEffect(function () {
+      return V2.db.collection(V2.config.col.parametros).onSnapshot(
+        function (sn) { var m = {}; sn.docs.forEach(function (d) { var x = d.data() || {}; if (x.cliente) m[x.cliente] = x; }); setParamsCliente(m); },
+        function (e) { setParamsCliente({}); setErrBusq("No se pudieron cargar los parámetros por cliente: " + ((e && e.message) || e)); });
     }, []);
 
     // Tipificaciones del catálogo, según cliente(s)/cartera(s)/fechas elegidos.
@@ -558,9 +611,10 @@
       };
     };
 
-    var cargarResultadosDePagina = function (filas, mId) {
-      if (!mId || !filas || !filas.length) return;
-      var ids = filas.filter(function (f) { return !f.sinGrabacion; }).map(function (f) { return V2.idResultado(f.grabacion, mId); });
+    var cargarResultadosDePagina = function (filas, resolver) {
+      if (!resolver || !filas || !filas.length) return;
+      var ids = [];
+      filas.forEach(function (f) { if (f.sinGrabacion) return; var m = resolver(f); if (m && m.id) ids.push(V2.idResultado(f.grabacion, m.id)); });
       var lotes = []; for (var i = 0; i < ids.length; i += 10) lotes.push(ids.slice(i, i + 10));
       lotes.forEach(function (lote) {
         if (!lote.length) return;
@@ -575,7 +629,7 @@
       var body = armarBody(pagina);
       V2.api(V2.config.api.buscar, body, 60000).then(function (d) {
         setResultado(d); setBuscando(false);
-        cargarResultadosDePagina(d.filas || [], metodoId);
+        cargarResultadosDePagina(d.filas || [], metodoId ? resolverMetodo : null);
       }).catch(function (e) { setBuscando(false); setErrBusq((e && e.message) || "Error buscando."); });
     };
 
@@ -593,7 +647,12 @@
     };
     var onCargarArchivo = function (file) { leerArchivoNumeros(file, function (texto, msg) { if (texto !== null) setNumerosTexto(texto); setMsgCarga(msg); }); };
 
-    useEffect(function () { if (resultado && resultado.filas) cargarResultadosDePagina(resultado.filas, metodoId); }, [metodoId]);
+    // Al cambiar de método, de parámetros o de prompt a medida: traer los resultados ya guardados (con pausa, por el tipeo).
+    useEffect(function () {
+      if (!resultado || !resultado.filas || !metodoId) return;
+      var to = setTimeout(function () { cargarResultadosDePagina(resultado.filas, resolverMetodo); }, metodoId === MODO_MEDIDA ? 700 : 0);
+      return function () { clearTimeout(to); };
+    }, [metodoId, paramsCliente, promptMedida, metodos]);
 
     var onToggleSel = function (f) { setSeleccion(function (prev) { var n = Object.assign({}, prev); if (n[f.grabacion]) delete n[f.grabacion]; else n[f.grabacion] = true; return n; }); };
     var onToggleTodasPagina = function (seleccionables, marcar) {
@@ -615,10 +674,28 @@
     };
 
     var metodoActual = metodos.filter(function (m) { return m.id === metodoId; })[0];
+    var tituloMetodo = metodoId === MODO_CLIENTE ? "Por cliente" : metodoId === MODO_MEDIDA ? "A medida" : (metodoActual ? metodoActual.titulo : "");
+
+    // Qué prompt corresponde a cada llamada según el método elegido. Devuelve
+    // {id, titulo, prompt, cliente, modo} o {falta, ayuda} si no se puede analizar.
+    var resolverMetodo = function (fila) {
+      if (metodoId === MODO_CLIENTE) {
+        var p = paramsCliente[fila.cliente];
+        if (!p || !String(p.prompt || "").trim()) return { falta: "Sin parámetro para " + (fila.cliente || "este cliente"), ayuda: "Definilo en Configuración → Parámetros de análisis por cliente." };
+        return { id: "param-" + V2.slugCliente(fila.cliente), titulo: "Parámetro " + fila.cliente, prompt: p.prompt, cliente: fila.cliente, modo: "cliente" };
+      }
+      if (metodoId === MODO_MEDIDA) {
+        if (!promptMedida.trim()) return { falta: "Escribí el prompt", ayuda: "Completá el prompt a medida arriba de la grilla." };
+        return { id: "medida-" + V2.hashTexto(promptMedida.trim()), titulo: "A medida", prompt: promptMedida.trim(), cliente: fila.cliente, modo: "medida" };
+      }
+      if (!metodoActual) return { falta: "Elegí un método" };
+      return { id: metodoActual.id, titulo: metodoActual.titulo, prompt: metodoActual.prompt, cliente: metodoActual.cliente || fila.cliente, modo: "metodo" };
+    };
 
     // Un solo cliente filtrado → se elige solo su método (se puede cambiar a mano: solo se re-aplica si cambia el cliente).
     var autoClienteRef = useRef("");
     useEffect(function () {
+      if (metodoId === MODO_CLIENTE || metodoId === MODO_MEDIDA) return;   // esos modos ya resuelven por cliente o por prompt propio
       if (filtros.clientes.length !== 1) { autoClienteRef.current = ""; return; }
       var cli = filtros.clientes[0];
       if (autoClienteRef.current === cli) return;
@@ -663,6 +740,7 @@
         etiqueta: (typeof score === "number") ? V2.scoreLabel(score) : "", es_valida: analisisObj.es_valida !== false,
         analizadoPor: (V2.usuario && (V2.usuario.nombre || V2.usuario.email)) || "", analizadoEn: new Date().toISOString()
       };
+      if (metodo.modo === "cliente" || metodo.modo === "medida") { doc.modo = metodo.modo; doc.promptUsado = metodo.prompt; }
       var id = V2.idResultado(fila.grabacion, metodo.id);
       return V2.db.collection(V2.config.col.resultados).doc(id).set(doc).then(function () {
         setResultadosMap(function (prev) { var n = Object.assign({}, prev); n[id] = doc; return n; });
@@ -697,8 +775,8 @@
       });
     };
 
-    var ejecutarCola = function (filas, metodo) {
-      if (!metodo || !filas.length) return;
+    var ejecutarCola = function (filas, resolver) {
+      if (!resolver || !filas.length) return;
       pausaRef.current = false;
       var pendientes = filas.slice(), total = pendientes.length, hechas = 0;
       setProgreso({ hechas: 0, total: total });
@@ -707,6 +785,11 @@
           if (pausaRef.current) return Promise.resolve();
           var f = pendientes.shift();
           if (!f) return Promise.resolve();
+          var metodo = resolver(f);
+          if (!metodo || !metodo.id) {
+            setErroresFila(function (p) { var n = Object.assign({}, p); n[f.grabacion] = "⚠ " + ((metodo && metodo.falta) || "Sin método"); return n; });
+            hechas++; setProgreso({ hechas: hechas, total: total }); return siguiente();
+          }
           return analizarFilaSegura(f, metodo).then(function () { hechas++; setProgreso({ hechas: hechas, total: total }); return siguiente(); });
         };
         return siguiente();
@@ -714,13 +797,13 @@
       return Promise.all([worker(), worker()]).then(function () { setProgreso(null); });
     };
 
-    var onAnalizarUna = function (fila) { if (metodoActual && !faltanteRef.current[fila.grabacion]) ejecutarCola([fila], metodoActual); };
-    var onReintentarUna = function (fila) { if (metodoActual) ejecutarCola([fila], metodoActual); };
+    var onAnalizarUna = function (fila) { if (metodoId && !faltanteRef.current[fila.grabacion]) ejecutarCola([fila], resolverMetodo); };
+    var onReintentarUna = function (fila) { if (metodoId) ejecutarCola([fila], resolverMetodo); };
     var onPedirAnalizar = function () { if (seleccionCount > 10) setConfirmando(true); else onConfirmarAnalizar(); };
     var onConfirmarAnalizar = function () {
       setConfirmando(false);
       var filas = (resultado && resultado.filas || []).filter(function (f) { return seleccion[f.grabacion] && !f.sinGrabacion && !faltanteRef.current[f.grabacion]; });
-      ejecutarCola(filas, metodoActual);
+      ejecutarCola(filas, resolverMetodo);
     };
     var onCancelarConfirmacion = function () { setConfirmando(false); };
     var onCancelarCola = function () { pausaRef.current = true; };
@@ -770,12 +853,15 @@
 
           <ChipsFiltros filtros={filtros} numerosTexto={numerosTexto} carterasIndex={carterasIndex} onQuitar={onQuitarChip} onLimpiar={onLimpiar} />
 
-          {resultado && <IndicadoresBusqueda total={resultado.total} filas={filas} resultadosMap={resultadosMap} metodoId={metodoId} />}
+          {resultado && <IndicadoresBusqueda total={resultado.total} filas={filas} resultadosMap={resultadosMap} metodoId={metodoId} resolver={resolverMetodo} />}
 
           <BarraAcciones seleccionCount={seleccionCount} hayResultado={!!resultado && !buscando} metodos={metodos} metodoId={metodoId} setMetodoId={setMetodoId}
             confirmando={confirmando} onPedirAnalizar={onPedirAnalizar} onConfirmarAnalizar={onConfirmarAnalizar} onCancelarConfirmacion={onCancelarConfirmacion}
             colaActiva={!!progreso} progreso={progreso || { hechas: 0, total: 0 }} onCancelarCola={onCancelarCola}
-            onDescargar={onDescargar} onDestildar={onDestildar} />
+            onDescargar={onDescargar} onDestildar={onDestildar} promptMedidaListo={!!promptMedida.trim()} />
+
+          {resultado && !buscando && metodoId === MODO_MEDIDA && <PromptMedida valor={promptMedida} onCambiar={setPromptMedida} />}
+          {resultado && !buscando && metodoId === MODO_CLIENTE && <AvisoParametros filas={filas} params={paramsCliente} />}
 
           {buscando && <V2.Cargando texto="Buscando llamadas…" />}
 
@@ -787,7 +873,7 @@
             </V2.Aviso>}
 
             <TablaResultados filas={filas} mapaOps={mapaOps} seleccion={seleccion} onToggleSel={onToggleSel} onToggleTodasPagina={onToggleTodasPagina}
-              filaExpandida={filaExpandida} onTogglePlay={onTogglePlay} metodoId={metodoId} metodoTitulo={metodoActual ? metodoActual.titulo : ""} resultadosMap={resultadosMap}
+              filaExpandida={filaExpandida} onTogglePlay={onTogglePlay} metodoId={metodoId} resolver={resolverMetodo} metodoTitulo={tituloMetodo} resultadosMap={resultadosMap}
               procesandoFila={procesandoFila} erroresFila={erroresFila} audioFaltante={audioFaltante} onAudioFaltante={marcarAudioFaltante} onAudioRevisar={revisarAudio} onAnalizarUna={onAnalizarUna} onReintentarUna={onReintentarUna} onAbrirModal={onAbrirModal} />
 
             <div className="v2-sub" style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 2px", flexWrap: "wrap" }}>
@@ -813,5 +899,5 @@
   }
 
   V2.ModalScore = ModalScore;   // lo reusa Control interno (control.jsx)
-  V2.registrar({ id: "buscar", titulo: "Buscar y analizar", grupo: "Audios", icono: "🔎", orden: 1, componente: PantallaBuscar });
+  V2.registrar({ id: "buscar", titulo: "Buscar y analizar", grupo: "Calidad de audios", icono: "🔎", orden: 1, componente: PantallaBuscar });
 })();

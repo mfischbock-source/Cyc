@@ -11,10 +11,10 @@ var LS_PANTALLA = "v2_pantalla_activa";
 // ── Pantallas "Próximamente" que arma el shell (NO son V2.registrar: no existen todavía). ──
 // (Control interno y Capacitación ya existen: control.jsx y capacitacion.jsx, 11/2026.)
 var PLACEHOLDERS = [];
-var GRUPOS = ["Audios", "Capacitación", "Configuración"];
+var GRUPOS = ["Calidad de audios", "Capacitación", "Configuración"];
 
 // Permiso que pide cada pantalla (V2.puede). Las que no figuran acá las ve cualquier rol con acceso.
-var PERMISO_PANTALLA = { buscar: "ver", "control-interno": "ver", "cap-cursos": "ver", "cap-seguimiento": "ver", metodos: "metodos", usuarios: "usuarios", ingresos: "ingresos" };
+var PERMISO_PANTALLA = { buscar: "ver", "control-interno": "ver", "cap-cursos": "ver", "cap-seguimiento": "ver", parametros: "metodos", metodos: "metodos", usuarios: "usuarios", ingresos: "ingresos" };
 function visiblePorRol(p) { return !PERMISO_PANTALLA[p.id] || V2.puede(PERMISO_PANTALLA[p.id]); }
 
 function itemsPorGrupo(grupo) {

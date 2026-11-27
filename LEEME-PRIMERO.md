@@ -12,6 +12,7 @@ Descomprimí la carpeta, abrila con Claude y pedile lo que quieras. Claude lee `
 | Control interno | `htdocs/v2/js/control.jsx` |
 | Capacitación (cursos y seguimiento) | `htdocs/v2/js/capacitacion.jsx` (los gestores la hacen en `htdocs/capacitacion.html`) |
 | Métodos de análisis (prompts) | `htdocs/v2/js/metodos.jsx` |
+| Parámetros de análisis por cliente | `htdocs/v2/js/parametros.jsx` (se usan en `buscar.jsx`) |
 | Usuarios e invitaciones / ingresos | `htdocs/v2/js/usuarios.jsx`, `ingresos.jsx` |
 | Menú, login, permisos por pantalla | `htdocs/v2/js/app.jsx`, `nucleo.jsx` |
 | Estilos | `htdocs/v2/css/estilos.css` |

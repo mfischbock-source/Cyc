@@ -404,6 +404,6 @@
     </div>;
   }
 
-  V2.registrar({ id: "control-interno", titulo: "Control interno", grupo: "Audios", icono: "🛡️", orden: 2, componente: PantallaControl });
+  V2.registrar({ id: "control-interno", titulo: "Control interno", grupo: "Calidad de audios", icono: "🛡️", orden: 2, componente: PantallaControl });
   V2._controlInterno = { agregar: agregar, filasDesdeResumen: filasDesdeResumen, diasDelMes: diasDelMes, cargarResumen: cargarResumen };   // para probar desde la consola
 })();

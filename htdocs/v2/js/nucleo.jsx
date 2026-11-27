@@ -38,7 +38,8 @@ V2.config = {
     analisisViejos: "analisis_llamadas", // solo lectura (reusar transcripciones ya pagadas)
     accesos: "usuarios_v2",        // perfiles del v2: {email, nombre, role, estado} (los administra el admin)
     invitaciones: "invitaciones_v2", // mails habilitados de antemano por el propietario: id = mail, {role, creadoPor, usadoEn?}
-    ingresos: "ingresos_v2"        // registro de ingresos (quién entró y cuándo): solo lo ve el propietario
+    ingresos: "ingresos_v2",       // registro de ingresos (quién entró y cuándo): solo lo ve el propietario
+    parametros: "parametros_cliente" // prompt de análisis por cliente: id = V2.slugCliente(cliente), {cliente, prompt, actualizadoPor, actualizadoEn}
   },
   // Login: entran los mails de este dominio y los que el propietario habilita a mano (Configuración → Usuarios).
   dominio: "dasaargentina.com",
@@ -86,6 +87,16 @@ V2.scoreColor = function (s) { return s >= 90 ? C.green : s >= 80 ? C.light : s 
 V2.scoreLabel = function (s) { return s >= 90 ? "Excelente" : s >= 80 ? "Muy bueno" : s >= 70 ? "Bueno" : "Regular"; };
 V2.urlAudio = function (grabacion) { return V2.config.api.audio + "?file=" + encodeURIComponent(grabacion) + "&token=" + V2.config.audioToken; };
 V2.idResultado = function (grabacion, metodoId) { return String(grabacion) + "__" + String(metodoId); };
+// Id estable de un cliente (doc de parametros_cliente y metodoId "param-<slug>" de sus resultados).
+V2.slugCliente = function (cliente) {
+  return String(cliente || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "sin-cliente";
+};
+// Hash corto de un texto (identifica un prompt "a medida": mismo texto = mismos resultados guardados).
+V2.hashTexto = function (t) {
+  var h = 5381, s = String(t || "");
+  for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+};
 
 // ── API (POST JSON con token). Devuelve el JSON; lanza Error con mensaje legible si falla. ──
 V2.api = function (url, body, timeoutMs) {
@@ -127,7 +138,7 @@ V2.useOperadores = function () {
 V2.nombreOperador = function (mapa, id) { var k = String(id == null ? "" : id).trim(); return (mapa && mapa[k]) ? mapa[k].nombre : (k ? ("Operador " + k) : "—"); };
 
 // ── Registro de pantallas: cada archivo de pantalla se registra acá; la app arma el menú. ──
-// V2.registrar({id, titulo, grupo, icono, orden, componente})   grupo: "Audios" | "Capacitación" | "Configuración"
+// V2.registrar({id, titulo, grupo, icono, orden, componente})   grupo: "Calidad de audios" | "Capacitación" | "Configuración"
 V2.pantallas = V2.pantallas || [];
 // Navegar a otra pantalla llevando datos (ej: Control interno → Buscar con el gestor y el mes cargados).
 // La pantalla destino los toma UNA vez al montarse con V2.tomarPedido(id). El shell define V2._navegar.
