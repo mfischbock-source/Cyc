@@ -112,6 +112,40 @@
     </div>;
   }
 
+  // Desplegable con tildes (varios a la vez). Se cierra con click afuera o Escape.
+  function DesplegableMulti(props) { // {id, items:[{key,label,count}], seleccion:[key], onChange, todos, vacio}
+    var stA = useState(false); var abierto = stA[0], setAbierto = stA[1];
+    var cajaRef = useRef(null);
+    useEffect(function () {
+      if (!abierto) return;
+      var fuera = function (e) { if (cajaRef.current && !cajaRef.current.contains(e.target)) setAbierto(false); };
+      var esc = function (e) { if (e.key === "Escape") setAbierto(false); };
+      document.addEventListener("mousedown", fuera); document.addEventListener("keydown", esc);
+      return function () { document.removeEventListener("mousedown", fuera); document.removeEventListener("keydown", esc); };
+    }, [abierto]);
+    var sel = props.seleccion || [], items = props.items || [];
+    var texto = !items.length ? (props.vacio || "Sin opciones")
+      : !sel.length ? (props.todos || "Todos")
+      : sel.length === 1 ? sel[0]
+      : (sel.length + " seleccionados");
+    return <div ref={cajaRef} style={{ position: "relative", marginTop: 6 }}>
+      <button type="button" id={props.id} aria-haspopup="listbox" aria-expanded={abierto} disabled={!items.length}
+        onClick={function () { setAbierto(!abierto); }}
+        style={Object.assign({}, V2.estiloInput, { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: items.length ? "pointer" : "default", textAlign: "left", font: "inherit", fontSize: 13 })}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: sel.length ? 600 : 400 }}>{texto}</span>
+        <span aria-hidden="true" style={{ fontSize: 10, color: V2.C.muted }}>{abierto ? "▲" : "▼"}</span>
+      </button>
+      {abierto && <div role="listbox" aria-multiselectable="true"
+        style={{ position: "absolute", zIndex: 20, left: 0, right: 0, top: "calc(100% + 4px)", background: V2.C.white, border: "1px solid " + V2.C.border, borderRadius: 8, boxShadow: "0 6px 18px rgba(0,0,0,.12)", padding: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, marginBottom: 6 }}>
+          <a style={{ cursor: "pointer" }} onClick={function () { props.onChange(items.map(function (it) { return it.key; })); }}>Marcar todos</a>
+          <a style={{ cursor: "pointer" }} onClick={function () { props.onChange([]); }}>Ninguno</a>
+        </div>
+        <ListaConTilde maxH={280} items={items} seleccion={sel} onChange={props.onChange} />
+      </div>}
+    </div>;
+  }
+
   function PanelFiltros(props) {
     var f = props.filtros, setF = props.setFiltros;
     var clientesItems = (props.catalogo || []).map(function (c) { return { key: c.cliente, label: c.cliente, count: props.conteosClientes ? props.conteosClientes[c.cliente] : undefined }; });
@@ -135,8 +169,8 @@
       </div>
 
       <div>
-        <h3>Cliente</h3>
-        <ListaConTilde items={clientesItems} seleccion={f.clientes} vacio="Cargando clientes…"
+        <h3><label htmlFor="buscar-clientes">Cliente</label></h3>
+        <DesplegableMulti id="buscar-clientes" items={clientesItems} seleccion={f.clientes} todos="Todos los clientes" vacio="Cargando clientes…"
           onChange={function (n) { setF(Object.assign({}, f, { clientes: n })); }} />
       </div>
 

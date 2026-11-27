@@ -112,29 +112,32 @@
     return <div>
       {err && <V2.Aviso tipo="error">{err}</V2.Aviso>}
       <div className="v2-sub" style={{ marginBottom: 12 }}>
-        <b className="v2-num">{configurados}</b> de <b className="v2-num">{todos.length}</b> clientes con parámetro definido. Elegí un cliente para ver o cambiar su prompt.
+        <b className="v2-num">{configurados}</b> de <b className="v2-num">{todos.length}</b> clientes con parámetro definido. Elegí un cliente en el desplegable para ver o cambiar su prompt.
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 260px) minmax(0, 1fr)", gap: 16, alignItems: "start" }} className="v2p-grilla">
-        <style>{"@media (max-width: 760px){.v2p-grilla{grid-template-columns:minmax(0,1fr)!important}}.v2p-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;font:inherit;font-size:13px;padding:9px 12px;border:0;border-bottom:1px solid var(--borde, #dde7d8);background:none;cursor:pointer;color:inherit}.v2p-item:last-child{border-bottom:0}.v2p-item:hover{background:#f3f6f1}.v2p-item.activo{background:#e8f1e4;font-weight:700}"}</style>
-        <div className="v2-tarjeta" style={{ padding: 0, overflow: "hidden" }}>
-          {todos.map(function (c) {
-            var ok = docs[c] && docs[c].prompt;
-            return <button key={c} type="button" className={"v2p-item" + (sel === c ? " activo" : "")} onClick={function () { setSel(c); }}>
-              <span>{c}</span>
-              {ok ? <V2.Chip color={V2.C.ok}>Definido</V2.Chip> : <V2.Chip color={V2.C.warn}>Sin parámetro</V2.Chip>}
-            </button>;
-          })}
+      <V2.Tarjeta style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <label htmlFor="param-cliente" style={{ fontWeight: 700, fontSize: 13 }}>Cliente</label>
+          <select id="param-cliente" value={sel} onChange={function (e) { setSel(e.target.value); }}
+            style={Object.assign({}, V2.estiloInput, { minWidth: 260, maxWidth: "100%", fontSize: 14 })}>
+            <option value="">Elegir cliente…</option>
+            {todos.map(function (c) {
+              var ok = docs[c] && docs[c].prompt;
+              return <option key={c} value={c}>{c}{ok ? "" : " · sin parámetro"}</option>;
+            })}
+          </select>
+          {sel && (docs[sel] && docs[sel].prompt
+            ? <V2.Chip color={V2.C.ok}>Definido</V2.Chip>
+            : <V2.Chip color={V2.C.warn}>Sin parámetro</V2.Chip>)}
         </div>
-        <div style={{ minWidth: 0 }}>
-          {sel
-            ? <EditorParametro key={sel} cliente={sel} doc={docs[sel]} metodos={metodos} />
-            : <div className="v2-tarjeta" style={{ textAlign: "center", padding: "36px 20px" }}>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>Elegí un cliente de la lista</div>
-                <div className="v2-sub">Ahí vas a definir el prompt con el que la IA analiza sus llamadas.</div>
-              </div>}
-        </div>
-      </div>
+      </V2.Tarjeta>
+
+      {sel
+        ? <EditorParametro key={sel} cliente={sel} doc={docs[sel]} metodos={metodos} />
+        : <div className="v2-tarjeta" style={{ textAlign: "center", padding: "36px 20px" }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Elegí un cliente en el desplegable</div>
+            <div className="v2-sub">Se abre el prompt con el que la IA analiza sus llamadas.</div>
+          </div>}
     </div>;
   }
 
