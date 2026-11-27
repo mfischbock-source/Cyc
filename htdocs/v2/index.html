@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="DASA · Calidad & Capacitación — buscar y analizar llamadas con IA, métodos de análisis.">
+<meta name="theme-color" content="#1e3320">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23437540'/%3E%3Ctext x='32' y='45' font-family='Arial,sans-serif' font-size='36' font-weight='700' fill='white' text-anchor='middle'%3ED%3C/text%3E%3C/svg%3E">
+<title>DASA · Calidad & Capacitación</title>
+<!-- Frontend NUEVO (v2). El frontend anterior sigue intacto en /index.html (servido en /anterior/). -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Babel 7.24.7 FIJO: versiones nuevas rompían la app (pantalla en blanco). No usar ?. ni ?? -->
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script type="text/babel" data-presets="react" src="/cyc_sesion.jsx?v=4"></script>  <!-- sesión del backend (ver cyc_auth.php) -->
+<!-- Tipografía IBM Plex Sans/Mono AUTOALOJADA en v2/fonts/ (@font-face en estilos.css). Sin
+     Google Fonts: el CSP del server (font-src 'self' data:) la bloquea en producción. -->
+<link rel="stylesheet" href="css/estilos.css?v=9">
+</head>
+<body>
+<div id="root"><div style="padding:40px;font-family:system-ui;color:#5a7a5a">Cargando…</div></div>
+<!-- ORDEN FIJO: núcleo → pantallas → app (la app monta al final). ?v= = versión: el server cachea .js 1 semana. -->
+<script type="text/babel" data-presets="react" src="js/nucleo.jsx?v=10"></script>
+<script type="text/babel" data-presets="react" src="js/buscar.jsx?v=12"></script>
+<script type="text/babel" data-presets="react" src="js/metodos.jsx?v=5"></script>
+<script type="text/babel" data-presets="react" src="js/usuarios.jsx?v=4"></script>
+<script type="text/babel" data-presets="react" src="js/ingresos.jsx?v=1"></script>
+<script type="text/babel" data-presets="react" src="js/control.jsx?v=3"></script>
+<script type="text/babel" data-presets="react" src="js/capacitacion.jsx?v=1"></script>
+<script type="text/babel" data-presets="react" src="js/app.jsx?v=10"></script>
+</body>
+</html>

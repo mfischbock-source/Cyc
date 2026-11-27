@@ -1,0 +1,257 @@
+/* ═══════════════════════════════════════════════════════════════════════════════════════
+   Estilos globales del frontend v2 — dueño: workstream B (shell).
+   Lenguaje visual = maqueta aprobada por Ramiro ("A + B · Combinada" / vistaD). Tokens de
+   color y tipografía en :root, autoalojada (CSP del server: font-src 'self' data:, sin
+   Google Fonts). Documento acá las clases reutilizables para que las usen otras pantallas
+   (Buscar, Métodos, etc.) sin reinventar estilos:
+
+   COMPONENTES (V2.Boton/Tarjeta/Campo/Aviso/Chip/Modal/Cargando, en nucleo.js, los usan solos):
+     .v2-btn .v2-btn-primario|v2-btn-secundario|v2-btn-peligro|v2-btn-link .v2-btn-chico
+     .v2-tarjeta .v2-tarjeta-titulo
+     .v2-campo  (label + input/select con V2.estiloInput)
+     .v2-aviso .v2-aviso-info|v2-aviso-ok|v2-aviso-alerta|v2-aviso-error .v2-aviso-cerrar
+     .v2-chip (data-clickable="true" para hover/focus)
+     .v2-modal-velo .v2-modal .v2-modal-header .v2-modal-titulo .v2-modal-cerrar .v2-modal-cuerpo
+     .v2-cargando
+
+   PARA PANTALLAS (Buscar y analizar, Métodos, etc. — las arma cada workstream con estas clases):
+     .v2-tabla-caja > .v2-tabla > thead th / tbody td   (encabezado sticky, hover, fila.v2-fila-sel
+       = verde claro, fila.v2-fila-sin = texto gris/deshabilitada)
+     .v2-tip          etiqueta de tipificación
+     .v2-score + v2-score-ok|v2-score-av|v2-score-mal|v2-score-na   (score de una llamada)
+     .v2-num          números en IBM Plex Mono con tabular-nums
+     .v2-sub          texto secundario chico (11.5px, tinta-3)
+     .v2-acciones     barra verde oscura de acciones por lote (encabezado con .cuenta y botones)
+     .v2-kpis / .v2-kpi   grilla de tarjetas KPI (4 columnas, 2 en angosto)
+     .v2-facetas      panel lateral de filtros, sticky, con .v2-facetas-lista label
+     .v2-dos          grid de 2 columnas (260px + resto); pasa a 1 columna <900px
+
+   Responsive: <900px el menú lateral (.v2-nav) se colapsa (hamburguesa) y .v2-dos → 1 columna.
+   ═══════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Tipografía autoalojada (IBM Plex Sans 400/500/600/700, IBM Plex Mono 400/500) ───────
+   Bajada de fonts.gstatic.com (licencia OFL) a v2/fonts/. NO usar Google Fonts en producción:
+   el server tiene CSP style-src 'self' 'unsafe-inline'; font-src 'self' data: — bloquea CDNs. */
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400;font-display:swap;src:url('../fonts/ibm-plex-sans-400-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400;font-display:swap;src:url('../fonts/ibm-plex-sans-400-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:500;font-display:swap;src:url('../fonts/ibm-plex-sans-500-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:500;font-display:swap;src:url('../fonts/ibm-plex-sans-500-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:600;font-display:swap;src:url('../fonts/ibm-plex-sans-600-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:600;font-display:swap;src:url('../fonts/ibm-plex-sans-600-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:700;font-display:swap;src:url('../fonts/ibm-plex-sans-700-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:700;font-display:swap;src:url('../fonts/ibm-plex-sans-700-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url('../fonts/ibm-plex-mono-400-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url('../fonts/ibm-plex-mono-400-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url('../fonts/ibm-plex-mono-500-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url('../fonts/ibm-plex-mono-500-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+
+/* ── Tokens (exactos de la maqueta aprobada) ─────────────────────────────────────────── */
+:root{
+  --verde:#437540; --verde-osc:#1e3320; --verde-med:#2d5a2b; --verde-claro:#e8f1e4; --verde-borde:#cfe0c7;
+  --fondo:#f3f6f1; --papel:#ffffff; --tinta:#17241a; --tinta-2:#4d6250; --tinta-3:#7b8f7d; --linea:#dde7d8;
+  --ok:#2f8f4e; --ok-bg:#e6f4ea; --aviso:#b7791f; --aviso-bg:#fbf1dc; --mal:#c0392b; --mal-bg:#fbe9e7; --info:#2463a6; --info-bg:#e7f0fa;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────────────────── */
+*{box-sizing:border-box}
+body{margin:0;background:var(--fondo);color:var(--tinta);font-family:var(--sans);font-size:14px;line-height:1.45}
+button,input,select,textarea{font-family:inherit}
+a{color:var(--info)}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+
+/* ── Scrollbars finos ─────────────────────────────────────────────────────────────────── */
+*{scrollbar-width:thin;scrollbar-color:var(--verde-borde) transparent}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:var(--verde-borde);border-radius:8px}
+
+/* ── V2.Boton ─────────────────────────────────────────────────────────────────────────── */
+.v2-btn{font-weight:600;font-size:13px;padding:7px 13px;border-radius:7px;border:1px solid var(--linea);background:var(--papel);color:var(--tinta);cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s,color .15s}
+.v2-btn-chico{padding:5px 10px;font-size:12px}
+.v2-btn:hover:not(:disabled){border-color:var(--tinta-3)}
+.v2-btn:disabled{opacity:.5;cursor:not-allowed}
+.v2-btn-primario{background:var(--verde);border-color:var(--verde);color:#fff}
+.v2-btn-primario:hover:not(:disabled){background:var(--verde-med);border-color:var(--verde-med)}
+.v2-btn-peligro{background:var(--papel);border-color:var(--mal);color:var(--mal)}
+.v2-btn-peligro:hover:not(:disabled){background:var(--mal-bg)}
+.v2-btn-link{background:none;border-color:transparent;color:var(--info);padding:0;text-decoration:underline;font-weight:600}
+.v2-btn-link:hover:not(:disabled){color:#164a7d}
+
+/* ── V2.Tarjeta ───────────────────────────────────────────────────────────────────────── */
+.v2-tarjeta{background:var(--papel);border:1px solid var(--linea);border-radius:10px;padding:16px;margin-bottom:14px}
+.v2-tarjeta-titulo{font-size:14px;font-weight:700;color:var(--tinta);margin-bottom:10px}
+
+/* ── V2.Campo + V2.estiloInput ────────────────────────────────────────────────────────── */
+.v2-campo{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--tinta-2);font-weight:500}
+.v2-campo input,.v2-campo select,.v2-campo textarea{font-size:13px;padding:6px 9px;border:1px solid var(--linea);border-radius:7px;background:var(--papel);color:var(--tinta);min-width:0}
+
+/* ── V2.Aviso ─────────────────────────────────────────────────────────────────────────── */
+.v2-aviso{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;padding:8px 12px;border-radius:8px;margin:8px 0}
+.v2-aviso-info{background:var(--info-bg);color:#1d4f86;border:1px solid #c7dbf1}
+.v2-aviso-ok{background:var(--ok-bg);color:var(--ok);border:1px solid #bfe2ca}
+.v2-aviso-alerta{background:var(--aviso-bg);color:var(--aviso);border:1px solid #efd7a6}
+.v2-aviso-error{background:var(--mal-bg);color:var(--mal);border:1px solid #f0c3bd}
+.v2-aviso-cerrar{cursor:pointer;color:inherit;opacity:.7;font-weight:700}
+.v2-aviso-cerrar:hover{opacity:1}
+
+/* ── V2.Chip ──────────────────────────────────────────────────────────────────────────── */
+.v2-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 9px;border-radius:999px;background:var(--verde-claro);border:1px solid var(--verde-borde);color:var(--verde-osc);white-space:nowrap}
+.v2-chip b{font-weight:600}
+.v2-chip[data-clickable="true"]{cursor:pointer}
+.v2-chip[data-clickable="true"]:hover{filter:brightness(.95)}
+
+/* ── V2.Modal ─────────────────────────────────────────────────────────────────────────── */
+.v2-modal-velo{position:fixed;inset:0;background:rgba(18,32,20,.45);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto;z-index:1000}
+.v2-modal{background:var(--papel);border-radius:14px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.25)}
+.v2-modal-header{display:flex;gap:14px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--linea)}
+.v2-modal-titulo{flex:1;font-size:16px;font-weight:700;color:var(--tinta)}
+.v2-modal-cerrar{margin-left:auto;font-size:20px;background:none;border:0;cursor:pointer;color:var(--tinta-3)}
+.v2-modal-cuerpo{padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+
+/* ── V2.Cargando ──────────────────────────────────────────────────────────────────────── */
+.v2-cargando{padding:16px;color:var(--tinta-3);font-size:13px}
+
+/* ── Clases para pantallas (Buscar, Métodos, etc.) ───────────────────────────────────── */
+.v2-num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px}
+.v2-sub{display:block;color:var(--tinta-3);font-size:11.5px}
+.v2-tip{font-size:12px;padding:2px 8px;border-radius:5px;background:#f0f4ee;border:1px solid var(--linea);white-space:nowrap}
+
+.v2-tabla-caja{overflow-x:auto;background:var(--papel);border:1px solid var(--linea);border-radius:10px}
+.v2-tabla{border-collapse:collapse;width:100%;min-width:860px;font-size:13px}
+.v2-tabla th{position:sticky;top:0;background:#f7faf5;text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--tinta-2);font-weight:600;padding:9px 10px;border-bottom:1px solid var(--linea);white-space:nowrap}
+.v2-tabla td{padding:8px 10px;border-bottom:1px solid #eef3eb;vertical-align:middle}
+.v2-tabla tr:last-child td{border-bottom:0}
+.v2-tabla tbody tr:hover td{background:#f8fbf6}
+.v2-tabla tr.v2-fila-sel td{background:var(--verde-claro)!important}
+.v2-tabla tr.v2-fila-sin td{color:var(--tinta-3)}
+
+.v2-score{font-family:var(--mono);font-weight:500;font-size:12.5px;padding:3px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent;white-space:nowrap;background:none}
+.v2-score-ok{background:var(--ok-bg);color:var(--ok);border-color:#bfe2ca}
+.v2-score-av{background:var(--aviso-bg);color:var(--aviso);border-color:#efd7a6}
+.v2-score-mal{background:var(--mal-bg);color:var(--mal);border-color:#f0c3bd}
+.v2-score-na{background:#f1f3f0;color:var(--tinta-3);border-color:var(--linea);cursor:help}
+
+.v2-acciones{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;margin-bottom:10px;background:var(--verde-osc);color:#fff}
+.v2-acciones select{font-size:13px;padding:6px 9px;border-radius:7px;border:0}
+.v2-acciones .v2-btn{border:0}
+.v2-acciones .v2-btn-secundario{background:rgba(255,255,255,.14);color:#fff}
+.v2-acciones .v2-cuenta{font-weight:700}
+
+.v2-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}
+.v2-kpi{background:var(--papel);border:1px solid var(--linea);border-radius:10px;padding:10px 12px}
+.v2-kpi b{display:block;font-size:20px;font-family:var(--mono);font-weight:500}
+.v2-kpi span{font-size:11.5px;color:var(--tinta-3)}
+
+.v2-facetas{position:sticky;top:12px;max-height:calc(100vh - 80px);overflow-y:auto;background:var(--papel);border:1px solid var(--linea);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:14px;align-self:start}
+/* Buscar/Limpiar siempre a la vista, aunque la lista de filtros sea larga. 80px = encabezado + márgenes. */
+.v2-facetas-acciones{display:flex;gap:8px;position:sticky;bottom:-14px;z-index:2;margin:0 -14px -14px;padding:10px 14px 14px;background:var(--papel);border-top:1px solid var(--linea)}
+.v2-facetas h3{margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--tinta-2)}
+.v2-facetas-lista label{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:3px 0;cursor:pointer}
+.v2-facetas-lista label span:last-child{color:var(--tinta-3);font-family:var(--mono);font-size:12px}
+
+.v2-dos{display:grid;grid-template-columns:260px minmax(0,1fr);gap:14px}
+
+/* ── Login ────────────────────────────────────────────────────────────────────────────── */
+.v2-login-fondo{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;background:#1b3818}
+.v2-login-caja{width:100%;max-width:440px;background:#fff;border-radius:26px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.4)}
+.v2-login-header{padding:44px 44px 0;text-align:center}
+.v2-login-logo{height:56px;display:block;margin:0 auto}
+.v2-login-sub{color:#4a7a45;font-size:15px;margin-top:12px;letter-spacing:.1em;text-transform:uppercase;text-align:center}
+.v2-login-body{padding:30px 44px 40px}
+.v2-login-titulo{display:none}
+.v2-btn-google{width:100%;display:flex;align-items:center;gap:14px;height:52px;padding:0 18px;background:#fff;border:2px solid #dadce0;border-radius:10px;font:inherit;font-size:17px;font-weight:500;color:#3c4043;cursor:pointer}
+.v2-btn-google:hover:not(:disabled){background:#f8f9fa;border-color:#c6c9cc}
+.v2-btn-google:disabled{opacity:.6;cursor:default}
+.v2-btn-google span{flex:1;text-align:center;margin-right:24px}
+.v2-login-pie{margin-top:22px;text-align:center;font-size:14px;color:#86a982}
+
+/* ── Shell: menú lateral + encabezado + contenido ─────────────────────────────────────── */
+.v2-shell{display:flex;min-height:100vh}
+.v2-nav{width:212px;flex-shrink:0;background:var(--verde-osc);color:#dfeadb;padding:16px 12px;display:flex;flex-direction:column;gap:2px}
+.v2-nav-logo{font-weight:700;font-size:18px;color:#fff;padding:2px 8px 14px;letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+.v2-nav-logo img{height:22px}
+.v2-nav-logo span{display:block;font-size:10px;letter-spacing:.14em;color:#9fbf98;font-weight:500}
+.v2-nav-grupo{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8fae89;padding:12px 8px 4px}
+.v2-nav-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border-radius:7px;border:0;background:none;color:#dfeadb;text-decoration:none;font-size:13px;text-align:left;cursor:pointer;font-family:inherit}
+.v2-nav-item:hover{background:rgba(255,255,255,.08)}
+.v2-nav-item.v2-nav-item-activa{background:rgba(255,255,255,.12);color:#fff;font-weight:600}
+.v2-nav-item.v2-nav-item-prox{color:#7f9c79;cursor:default}
+.v2-nav-item.v2-nav-item-prox:hover{background:none}
+.v2-nav-item-prox-etq{margin-left:auto;font-size:10px;color:#7f9c79}
+.v2-nav-pie{margin-top:auto;padding:10px 8px 2px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;color:#9fbf98;display:flex;flex-direction:column;gap:8px}
+.v2-nav-pie a,.v2-nav-pie button{color:#cfe0c7;font-size:12px;text-decoration:none;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+.v2-nav-pie a:hover,.v2-nav-pie button:hover{color:#fff;text-decoration:underline}
+.v2-nav-usuario-nombre{color:#eef5ea;font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v2-nav-usuario-email{font-size:11px;color:#9fbf98;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.v2-contenido{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--fondo)}
+.v2-cab{display:flex;align-items:baseline;gap:12px;padding:18px 20px 0;flex-wrap:wrap}
+.v2-cab h2{margin:0;font-size:18px}
+.v2-main{flex:1;min-width:0;padding:14px 20px 24px}
+.v2-hamburguesa{display:none;background:none;border:1px solid var(--linea);border-radius:7px;font-size:16px;padding:5px 9px;cursor:pointer;color:var(--tinta)}
+.v2-overlay{display:none}
+
+/* ── Mensajes / carga a pantalla completa ─────────────────────────────────────────────── */
+.v2-carga,.v2-pantalla-mensaje{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.v2-pantalla-mensaje-caja{max-width:420px;text-align:center}
+.v2-pantalla-mensaje-titulo{font-size:16px;font-weight:700;color:var(--tinta);margin-bottom:8px}
+.v2-pantalla-mensaje-texto{font-size:13px;color:var(--tinta-2);line-height:1.6;margin-bottom:14px}
+
+/* ── Responsive: <900px el menú lateral se colapsa ────────────────────────────────────── */
+@media (max-width:900px){
+  .v2-hamburguesa{display:inline-flex;align-items:center;justify-content:center}
+  .v2-nav{position:fixed;top:0;left:0;height:100vh;z-index:200;transform:translateX(-100%);transition:transform .2s ease;box-shadow:2px 0 24px rgba(0,0,0,.25)}
+  .v2-menu-abierto .v2-nav{transform:translateX(0)}
+  .v2-menu-abierto .v2-overlay{display:block;position:fixed;inset:0;background:rgba(10,20,10,.45);z-index:150}
+  .v2-dos{grid-template-columns:1fr}
+  .v2-facetas{position:static;max-height:none;overflow-y:visible}
+  .v2-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .v2-main{padding:12px 14px 20px}
+  .v2-cab{padding:14px 14px 0}
+}
+
+/* ── Celular (<=700px): las tablas pasan a tarjetas, sin scroll horizontal ──────────────── */
+@media (max-width:700px){
+  .v2-tabla.v2-tarjetas{min-width:0}
+  .v2-tarjetas thead{display:none}
+  .v2-tarjetas,.v2-tarjetas tbody,.v2-tarjetas tr,.v2-tarjetas td{display:block;width:100%}
+  .v2-tarjetas tr{padding:10px 12px;border-bottom:1px solid #e3ebe0}
+  .v2-tarjetas tr:last-child{border-bottom:0}
+  .v2-tarjetas td{position:relative;border:0;padding:3px 0 3px 98px;min-height:24px;text-align:left;word-break:break-word}
+  .v2-tarjetas td::before{content:attr(data-label);position:absolute;left:0;top:5px;width:90px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta-3)}
+  .v2-tarjetas td:not([data-label]){padding-left:0}
+  .v2-tarjetas td[colspan="2"]{padding-left:98px}
+  .v2-tarjetas tbody tr:hover td{background:transparent}
+  .v2-tarjetas tr.v2-fila-sel{background:var(--verde-claro)}
+  .v2-tarjetas tr.v2-fila-sel td{background:transparent!important}
+  .v2-tarjetas select{max-width:100%}
+  /* Resultados: casilla + ▶ + cliente arriba; el resto en filas con etiqueta */
+  .v2-tabla-res thead{display:block}
+  .v2-tabla-res thead tr{display:flex;align-items:center;padding:8px 12px;background:#f7faf5;border-bottom:1px solid var(--linea)}
+  .v2-tabla-res thead th{display:none;position:static;padding:0;border:0;background:none}
+  .v2-tabla-res thead th:first-child{display:flex;align-items:center;gap:10px;width:auto}
+  .v2-tabla-res thead th:first-child::after{content:"Tildar todas las de esta página";font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--tinta-2)}
+  .v2-tabla-res tbody tr:not(.v2-fila-player){display:grid;grid-template-columns:34px 44px 1fr;align-items:center}
+  .v2-tabla-res tbody tr:not(.v2-fila-player) td:nth-child(1){grid-column:1;grid-row:1;padding:0}
+  .v2-tabla-res tbody tr:not(.v2-fila-player) td:nth-child(2){grid-column:2;grid-row:1;padding:0}
+  .v2-tabla-res tbody tr:not(.v2-fila-player) td:nth-child(3){grid-column:3;grid-row:1;padding:0 0 0 4px;font-weight:600}
+  .v2-tabla-res tbody tr:not(.v2-fila-player) td:nth-child(n+4){grid-column:1 / -1}
+  .v2-tabla-res tbody tr:not(.v2-fila-player) td:nth-child(4){margin-top:8px}
+  .v2-tabla-res tr.v2-fila-player{display:block;padding:0 8px 8px;border-bottom:1px solid #e3ebe0}
+  .v2-tabla-res tr.v2-fila-player td{padding:0}
+  /* Barra de acciones y filtros: que quepan en una columna */
+  .v2-acciones{flex-wrap:wrap}
+}
+@media (prefers-reduced-motion:no-preference){
+  .v2-btn,.v2-score,.v2-nav-item{transition:background .15s,border-color .15s,color .15s}
+}
+
+/* Indicio de que la grilla se puede deslizar a los costados en pantallas angostas (sombra en el borde con más contenido) */
+.v2-tabla-caja{background:
+  linear-gradient(to right, var(--papel) 30%, rgba(255,255,255,0)) left center / 24px 100% no-repeat local,
+  linear-gradient(to left, var(--papel) 30%, rgba(255,255,255,0)) right center / 24px 100% no-repeat local,
+  radial-gradient(farthest-side at 0 50%, rgba(23,36,26,.16), rgba(0,0,0,0)) left center / 10px 100% no-repeat scroll,
+  radial-gradient(farthest-side at 100% 50%, rgba(23,36,26,.16), rgba(0,0,0,0)) right center / 10px 100% no-repeat scroll,
+  var(--papel);}

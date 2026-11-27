@@ -1,0 +1,25 @@
+# ── secretos: NUNCA (viven fuera de htdocs, chmod 600) ──
+secrets.local.*
+*.pem
+*.key
+# archivos con credenciales embebidas (copias viejas / scripts locales)
+config-CORREGIDO.php
+test-audios-local.sh
+# ── paquetes de deploy armados a mano (pueden traer config.php viejo con claves) ──
+*.zip
+deploy-*/
+# ── pesado / local ──
+whisper-models/
+htdocs/uploads/capacitaciones/*
+!htdocs/uploads/capacitaciones/.htaccess
+htdocs/_sample_audio.wav
+*.log
+.DS_Store
+node_modules/
+
+# carpetas de staging/capturas (build artifacts)
+CYC*/
+
+# caches locales
+__pycache__/
+_anteriores/

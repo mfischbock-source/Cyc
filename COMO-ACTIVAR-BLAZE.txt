@@ -1,0 +1,33 @@
+CÓMO PASAR EL PROYECTO DE FIREBASE AL PLAN BLAZE (pago por uso)
+════════════════════════════════════════════════════════════════
+
+POR QUÉ
+───────
+El plan gratis (Spark) tiene un límite DIARIO de lecturas/escrituras en la base
+(Firestore). La app lee mucho (cada pantalla carga análisis, usuarios, etc.) y el
+análisis escribe una fila por llamada. Cuando se pasa del límite, la base devuelve
+"Quota exceeded" (429) y la app carga vacía o da error — aunque el código esté bien.
+
+El plan Blaze saca ese techo diario y cobra solo por lo que se usa. A este volumen
+es de centavos a pocos dólares por mes. Además, el análisis automático (cron) NO
+funciona sostenido sin Blaze.
+
+PASO A PASO (10 minutos, lo hace quien tenga acceso a la cuenta de Firebase)
+────────────────────────────────────────────────────────────────────────────
+1) Entrar a  https://console.firebase.google.com  con la cuenta del proyecto
+   "dasa-calidad".
+2) Abrir el proyecto dasa-calidad.
+3) Abajo a la izquierda, tocar el nombre del plan (dice "Spark" / "Plan gratuito").
+   O ir a  ⚙️ (Configuración) → Uso y facturación → Detalles y configuración.
+4) Botón "Modificar plan" / "Upgrade" → elegir "Blaze (pago por uso)".
+5) Asociar una cuenta de facturación de Google Cloud (tarjeta). Si no hay una,
+   te la crea en el momento.
+6) (Recomendado) Poner un PRESUPUESTO/ALERTA: en el paso de facturación se puede
+   fijar un aviso por mail si el gasto supera, por ejemplo, USD 5 o 10 al mes.
+   Así no hay sorpresas.
+7) Confirmar. Listo — el límite diario desaparece y la app deja de cortarse.
+
+NOTA
+────
+No cambia nada del código ni de la app. Es solo el plan de la base.
+Cualquier duda, Ramiro.

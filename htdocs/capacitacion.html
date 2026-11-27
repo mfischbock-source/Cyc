@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>DASA — Capacitación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet"/>
+<!-- ══════════════════════════════════════════════════════════════════════
+     FRONTEND NUEVO Y SEPARADO — SOLO CAPACITACIÓN.
+     No toca index.html. Mismo stack (React 18.3.1 + Babel 7.24.7 pineado +
+     Firebase compat 9.23.0). Mismo proyecto Firestore (dasa-calidad) pero
+     COLECCIONES NUEVAS con prefijo cap2_ para NO pisar los datos viejos.
+     Entidad única: CURSO (Curso → Material → Examen → Progreso). Sin módulos, estilo Google Classroom.
+     ══════════════════════════════════════════════════════════════════════ -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Babel PINEADO a 7.24.7 (igual que index.html). NO usar "latest". -->
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Open Sans','Segoe UI',system-ui,sans-serif;background:#f4f7f3;color:#1a2a1a}
+h1,h2,h3,h4{font-family:'Montserrat','Segoe UI',system-ui,sans-serif;letter-spacing:-.01em}
+input,select,textarea,button{font-family:inherit}
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-thumb{background:#a8c8a0;border-radius:3px}
+</style>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script type="text/babel" data-presets="react" src="/cyc_sesion.jsx?v=4"></script>  <!-- sesión del backend (ver cyc_auth.php) -->
+<script>
+// ── FIREBASE CONFIG (mismo proyecto que la plataforma actual) ─────────────
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyDfF_nq-LIxj-a-y5gYt1Dm3S3MH88lYyM",
+  authDomain:        "dasa-calidad.firebaseapp.com",
+  projectId:         "dasa-calidad",
+  storageBucket:     "dasa-calidad.firebasestorage.app",
+  messagingSenderId: "941746170537",
+  appId:             "1:941746170537:web:001753bf4bc471cd3e17b8"
+};
+// Endpoint de subida de material (on-premise, server DASA) — mismo que index.html
+const UPLOAD_PROXY = "/upload.php";
+const DASA_TOKEN   = "";   // ya no se usa: upload.php pide sesión (cyc_sesion.jsx)
+// ?demo=1 fuerza el modo demo (datos de ejemplo en memoria) sin tocar Firebase —
+// sirve para probar toda la UI sin login real. Sin el parámetro, usa Firebase real.
+const forzarDemo = new URLSearchParams(location.search).get("demo") === "1";
+const firebaseConfigured = !forzarDemo && !FIREBASE_CONFIG.apiKey.startsWith("REEMPLAZAR");
+if (firebaseConfigured) {
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    window.db   = firebase.firestore();
+    window.auth = firebase.auth();
+    window.firebaseConfigured = true;
+  } catch(e) { console.error("[CAP] Firebase:", e); window.firebaseConfigured = false; }
+} else { window.firebaseConfigured = false; }
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useMemo}=React;
+
+// ═══ PALETA (calcada de index.html) ═══════════════════════════════════════
+const C={dark:"#1e3320",green:"#437540",light:"#70c657",pale:"#e8f5e2",paleB:"#c8e8b8",white:"#fff",bg:"#f4f7f3",text:"#1a2a1a",muted:"#5a7a5a",border:"#d0e4c8",warn:"#e8a020",danger:"#c84040",info:"#2080c8"};
+
+// ═══ COLECCIONES NUEVAS (prefijo cap2_ para no tocar lo viejo) ═════════════
+const COL={cursos:"cap2_cursos",progreso:"cap2_progreso",intentos:"cap2_intentos",config:"cap2_config"};
+
+// ═══ HELPERS ══════════════════════════════════════════════════════════════
+const AUDIENCIAS=[
+  {v:"induccion",label:"Inducción",desc:"Gestores que ingresan",icon:"🌱",color:C.info},
+  {v:"continua", label:"Continua", desc:"Gestores en actividad",icon:"📈",color:C.green},
+  {v:"cartera",  label:"Por cartera",desc:"Solo una cartera",   icon:"🏦",color:C.warn},
+];
+const audInfo=v=>AUDIENCIAS.find(a=>a.v===v)||AUDIENCIAS[1];
+function tipoDe(nombreOExt){
+  const s=String(nombreOExt||"").toLowerCase();
+  if(/youtube\.com|youtu\.be/.test(s))return "youtube";
+  if(/^https?:\/\//.test(s))return "link";
+  const e=s.split(".").pop();
+  if(["pdf"].includes(e))return "pdf";
+  if(["mp4","webm","mov"].includes(e))return "video";
+  if(["mp3","wav","m4a","ogg"].includes(e))return "audio";
+  if(["jpg","jpeg","png","gif","webp"].includes(e))return "imagen";
+  if(["ppt","pptx","doc","docx","xls","xlsx"].includes(e))return "doc";
+  return "archivo";
+}
+const iconTipo={pdf:"📄",video:"🎬",audio:"🎧",imagen:"🖼️",doc:"📊",youtube:"▶️",link:"🔗",archivo:"📎"};
+function fmtBytes(n){ n=+n||0; if(n<1024)return n+" B"; if(n<1048576)return (n/1024).toFixed(0)+" KB"; return (n/1048576).toFixed(1)+" MB"; }
+function fmtSeg(s){ s=Math.round(+s||0); const m=Math.floor(s/60); return m>0?`${m}m ${s%60}s`:`${s}s`; }
+function hoyISO(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function uidCorto(){ return "m"+Math.random().toString(36).slice(2,9); }
+const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+const userUid=u=>u&&(u.uid||u.id||u.user)||"";
+
+// ═══ CAPA DE DATOS (Firestore real  ó  memoria demo) ══════════════════════
+// Cache en memoria de cursos: se invalida al guardar/borrar.
+let _cursosCache=null;
+const DEMO={ cursos:[], progreso:{}, intentos:[], config:{notaMinima:6,reintentos:3,mostrarRespuestas:true}, usuarios:[] };
+function seedDemo(){
+  DEMO.usuarios=[
+    {uid:"u_sup", name:"Vanesa Suárez", role:"supervisor", legajo:"S-01", cliente:"General"},
+    {uid:"u_ing", name:"Nuevo Ingreso", role:"ingreso",   legajo:"G-99", cliente:"Banco Galicia"},
+    {uid:"u_g1",  name:"Juan García",   role:"gestor",     legajo:"G-041",cliente:"Banco Santander"},
+    {uid:"u_g2",  name:"Ana Pérez",     role:"gestor",     legajo:"G-042",cliente:"Banco Galicia"},
+  ];
+  DEMO.cursos=[
+    {id:"c_ind", nombre:"Inducción DASA", descripcion:"Bienvenida, valores y normativa base.", audiencia:"induccion", cartera:null, asignadosA:[], activo:true, orden:0,
+      materiales:[
+        {id:"m1",titulo:"Bienvenida a DASA",tipo:"pdf",url:"#demo",tamanio:240000,actualizadoEn:"2026-08-01",revisarCadaDias:0},
+        {id:"m2",titulo:"Código de conducta",tipo:"pdf",url:"#demo",tamanio:180000,actualizadoEn:"2026-08-01",revisarCadaDias:180}],
+      evaluacion:{notaMinima:6,preguntas:[{preg:"¿DASA se dedica a…?",opciones:["Cobranzas","Turismo","Gastronomía","Minería"],correcta:0}]}},
+    {id:"c_san", nombre:"Guion Santander", descripcion:"Argumentario y objeciones de la cartera.", audiencia:"cartera", cartera:"Banco Santander", asignadosA:[], activo:true, orden:1,
+      materiales:[{id:"m3",titulo:"Speech de apertura",tipo:"video",url:"#demo",tamanio:5200000,actualizadoEn:"2026-08-10",revisarCadaDias:0}],
+      evaluacion:null},
+    {id:"c_ref", nombre:"Refuerzo: manejo de objeciones", descripcion:"Curso continuo para todo el equipo.", audiencia:"continua", cartera:null, asignadosA:[], activo:true, orden:2,
+      materiales:[{id:"m4",titulo:"Escucha activa",tipo:"audio",url:"#demo",tamanio:3100000,actualizadoEn:"2026-07-20",revisarCadaDias:90}],
+      evaluacion:{notaMinima:7,preguntas:[
+        {preg:"Ante una objeción, primero…",opciones:["Escuchar","Interrumpir","Cortar","Transferir"],correcta:0},
+        {preg:"El tono debe ser…",opciones:["Empático","Agresivo","Indiferente","Apurado"],correcta:0}]}},
+  ];
+}
+seedDemo();
+
+const store={
+  real(){ return window.firebaseConfigured; },
+  async cursos(force){
+    if(_cursosCache&&!force) return _cursosCache;
+    let arr;
+    if(this.real()){
+      const snap=await window.db.collection(COL.cursos).get();
+      arr=snap.docs.map(d=>({id:d.id,...d.data()}));
+    } else { arr=JSON.parse(JSON.stringify(DEMO.cursos)); }
+    arr.sort((a,b)=>(a.orden||0)-(b.orden||0)||String(a.nombre).localeCompare(String(b.nombre)));
+    _cursosCache=arr; return arr;
+  },
+  async guardarCurso(curso){
+    const id=curso.id||("cur"+Date.now());
+    const data={...curso,id,updatedAt:hoyISO()};
+    if(!data.createdAt) data.createdAt=hoyISO();
+    if(this.real()){ await window.db.collection(COL.cursos).doc(id).set(data,{merge:true}); }
+    else { const i=DEMO.cursos.findIndex(c=>c.id===id); if(i>=0)DEMO.cursos[i]=data; else DEMO.cursos.push(data); }
+    _cursosCache=null; return data;
+  },
+  async borrarCurso(id){
+    if(this.real()){ await window.db.collection(COL.cursos).doc(id).delete(); }
+    else { DEMO.cursos=DEMO.cursos.filter(c=>c.id!==id); }
+    _cursosCache=null;
+  },
+  async getProgreso(uid){
+    if(this.real()){ const d=await window.db.collection(COL.progreso).doc(uid).get(); return d.exists?d.data():{cursos:{}}; }
+    return DEMO.progreso[uid]||{cursos:{}};
+  },
+  async setProgreso(uid,data){
+    if(this.real()){ await window.db.collection(COL.progreso).doc(uid).set(data,{merge:true}); }
+    else { DEMO.progreso[uid]=data; }
+  },
+  async allProgreso(){
+    if(this.real()){ const s=await window.db.collection(COL.progreso).get(); const o={}; s.docs.forEach(d=>o[d.id]=d.data()); return o; }
+    return JSON.parse(JSON.stringify(DEMO.progreso));
+  },
+  async registrarIntento(it){
+    const id=`${it.uid}__${it.cursoId}__${it.intento}`;
+    if(this.real()){ await window.db.collection(COL.intentos).doc(id).set(it); }
+    else { DEMO.intentos=DEMO.intentos.filter(x=>!(x.uid===it.uid&&x.cursoId===it.cursoId&&x.intento===it.intento)); DEMO.intentos.push(it); }
+  },
+  async intentos(){
+    if(this.real()){ const s=await window.db.collection(COL.intentos).orderBy("fecha","desc").get().catch(async()=>await window.db.collection(COL.intentos).get()); return s.docs.map(d=>d.data()); }
+    return [...DEMO.intentos].sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  },
+  async usuarios(){
+    if(this.real()){ const s=await window.db.collection("usuarios").get(); return s.docs.map(d=>({uid:d.id,...d.data()})); }
+    return JSON.parse(JSON.stringify(DEMO.usuarios));
+  },
+  async config(){
+    if(this.real()){ const d=await window.db.collection(COL.config).doc("global").get(); return d.exists?d.data():{notaMinima:6,reintentos:3,mostrarRespuestas:true}; }
+    return DEMO.config;
+  }
+};
+
+// ═══ SUBIDA DE ARCHIVO (upload.php on-premise) ════════════════════════════
+async function subirArchivo(file,cartera){
+  if(!window.firebaseConfigured){
+    // Demo: no hay server; devolvemos un material simulado
+    return {ok:true,url:"#demo",path:"demo/"+file.name,filename:file.name,size:file.size,demo:true};
+  }
+  const fd=new FormData();
+  fd.append("file",file); fd.append("subtipo","cap2"); fd.append("cartera",cartera||"General"); fd.append("token",DASA_TOKEN);
+  const r=await fetch(UPLOAD_PROXY,{method:"POST",headers:{"X-DASA-Token":DASA_TOKEN},body:fd});
+  const j=await r.json().catch(()=>({error:"Respuesta no válida del servidor"}));
+  if(!r.ok||j.error) throw new Error(j.error||("Error "+r.status));
+  return j;
+}
+
+// ═══ CÁLCULO DE PROGRESO ══════════════════════════════════════════════════
+function materialesDe(curso){ if(curso.materiales)return curso.materiales; return (curso.modulos||[]).flatMap(m=>m.materiales||[]); }
+function progresoCurso(curso,prog){
+  const mats=materialesDe(curso);
+  const pc=(prog&&prog.cursos&&prog.cursos[curso.id])||{materiales:{},examen:{}};
+  const vistos=mats.filter(m=>pc.materiales&&pc.materiales[m.id]&&pc.materiales[m.id].visto).length;
+  const total=mats.length;
+  const examOk=!curso.evaluacion||(pc.examen&&pc.examen.aprobado);
+  const sospechoso=mats.some(m=>{const x=pc.materiales&&pc.materiales[m.id]; return x&&x.visto&&(x.segundos||0)<15;});
+  const pct=total?Math.round(vistos/total*100):(examOk?100:0);
+  const completo=(total===0||vistos===total)&&examOk;
+  return {vistos,total,pct,completo,examOk,sospechoso,segundos:mats.reduce((a,m)=>a+((pc.materiales&&pc.materiales[m.id]&&pc.materiales[m.id].segundos)||0),0),examen:pc.examen||null};
+}
+function cursoVisible(curso,user){
+  if(!curso.activo) return false;
+  const uid=userUid(user);
+  if(Array.isArray(curso.asignadosA)&&curso.asignadosA.includes(uid)) return true;
+  if(curso.audiencia==="induccion") return user.role==="ingreso";
+  if(curso.audiencia==="continua")  return user.role==="gestor"||user.role==="ingreso";
+  if(curso.audiencia==="cartera")   return String(curso.cartera||"")===String(user.cliente||user.cartera||"");
+  return false;
+}
+
+// ═══ UI PRIMITIVOS ════════════════════════════════════════════════════════
+const Btn=({children,onClick,kind="primary",sm,disabled,style})=>{
+  const base={border:"none",borderRadius:9,fontWeight:600,cursor:disabled?"not-allowed":"pointer",padding:sm?"6px 12px":"10px 16px",fontSize:sm?13:14,transition:".15s",opacity:disabled?.55:1};
+  const kinds={primary:{background:C.green,color:"#fff"},ghost:{background:C.pale,color:C.dark},danger:{background:"#fce8e8",color:C.danger},warn:{background:"#fff3d6",color:"#a5730a"},dark:{background:C.dark,color:"#fff"}};
+  return <button onClick={disabled?undefined:onClick} disabled={disabled} style={{...base,...kinds[kind],...style}}>{children}</button>;
+};
+const Field=({label,children,hint})=><div style={{marginBottom:12}}>
+  {label&&<label style={{display:"block",fontSize:12.5,color:C.muted,fontWeight:600,marginBottom:5}}>{label}</label>}
+  {children}
+  {hint&&<div style={{fontSize:11.5,color:C.muted,marginTop:4}}>{hint}</div>}
+</div>;
+const inStyle={width:"100%",padding:"9px 12px",border:`1px solid ${C.border}`,borderRadius:9,fontSize:14,color:C.text,outline:"none",background:"#fff"};
+const Input=p=><input {...p} style={{...inStyle,...(p.style||{})}}/>;
+const Textarea=p=><textarea {...p} style={{...inStyle,resize:"vertical",minHeight:64,...(p.style||{})}}/>;
+const Select=({value,onChange,children,style})=><select value={value} onChange={onChange} style={{...inStyle,cursor:"pointer",...style}}>{children}</select>;
+const Card=({children,style,onClick})=><div onClick={onClick} style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,padding:18,marginBottom:14,...(style||{})}}>{children}</div>;
+const Badge=({children,color=C.green,bg})=><span style={{display:"inline-block",padding:"2px 9px",borderRadius:20,fontSize:11.5,fontWeight:700,color,background:bg||(color+"18")}}>{children}</span>;
+const Empty=({icon="📭",children})=><div style={{textAlign:"center",padding:"48px 20px",color:C.muted}}><div style={{fontSize:40,marginBottom:10}}>{icon}</div>{children}</div>;
+const Spinner=({texto="Cargando…"})=><div style={{textAlign:"center",padding:"60px 20px",color:C.muted}}><div style={{fontSize:30,marginBottom:10}}>⏳</div>{texto}</div>;
+function Modal({onClose,title,children,width=560,footer}){
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(20,30,20,.55)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 16px",zIndex:50,overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:width,boxShadow:"0 20px 60px rgba(0,0,0,.35)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:`1px solid ${C.border}`}}>
+        <div style={{fontSize:16,fontWeight:700,color:C.dark}}>{title}</div>
+        <button onClick={onClose} style={{border:"none",background:"none",fontSize:22,cursor:"pointer",color:C.muted}}>×</button>
+      </div>
+      <div style={{padding:20}}>{children}</div>
+      {footer&&<div style={{padding:"14px 20px",borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",gap:10}}>{footer}</div>}
+    </div>
+  </div>;
+}
+// Barra de búsqueda + filtros reutilizable (regla DASA: máxima visibilidad)
+function Toolbar({children}){ return <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:16}}>{children}</div>; }
+const Buscador=({value,onChange,ph="Buscar…"})=><div style={{position:"relative",flex:"1 1 200px",minWidth:170}}>
+  <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:C.muted}}>🔎</span>
+  <input value={value} onChange={e=>onChange(e.target.value)} placeholder={ph} style={{...inStyle,paddingLeft:34}}/>
+</div>;
+function ProgBar({pct,color}){ return <div style={{height:8,background:C.pale,borderRadius:6,overflow:"hidden"}}>
+  <div style={{height:"100%",width:Math.min(100,pct||0)+"%",background:color||(pct>=100?C.green:C.light),transition:"width .3s"}}/>
+</div>; }
+
+// ═══ PLAYER (visor con cronómetro real) ═══════════════════════════════════
+function Player({material,onClose,onVisto,yaVisto}){
+  const [seg,setSeg]=useState(0);
+  const min=15; // segundos mínimos sugeridos para habilitar "marcar visto"
+  useEffect(()=>{ const t=setInterval(()=>setSeg(s=>s+1),1000); return ()=>clearInterval(t); },[]);
+  const u=material.url||"#";
+  const demo=u==="#demo"||u==="#";
+  let visor;
+  if(demo) visor=<div style={{padding:"40px 20px",textAlign:"center",color:C.muted,background:C.bg,borderRadius:10}}>{iconTipo[material.tipo]||"📎"} <div style={{marginTop:8}}>Vista previa no disponible en modo demo.</div><div style={{fontSize:12,marginTop:4}}>En el server real se abre el archivo subido.</div></div>;
+  else if(material.tipo==="youtube"){ const vid=(u.match(/[?&]v=([^&]+)/)||u.match(/youtu\.be\/([^?&]+)/)||u.match(/embed\/([^?&]+)/)||[])[1]; visor=vid?<iframe src={"https://www.youtube.com/embed/"+vid} style={{width:"100%",height:420,border:"none",borderRadius:10}} allowFullScreen/>:<div style={{padding:"30px",textAlign:"center"}}><a href={u} target="_blank" style={{color:C.info,fontWeight:700}}>▶️ Abrir en YouTube</a></div>; }
+  else if(material.tipo==="pdf") visor=<iframe src={u} style={{width:"100%",height:460,border:`1px solid ${C.border}`,borderRadius:10}}/>;
+  else if(material.tipo==="video") visor=<video src={u} controls style={{width:"100%",borderRadius:10,maxHeight:460}}/>;
+  else if(material.tipo==="audio") visor=<audio src={u} controls style={{width:"100%"}}/>;
+  else if(material.tipo==="imagen") visor=<img src={u} style={{width:"100%",borderRadius:10}}/>;
+  else if(material.tipo==="link") visor=<div style={{padding:"34px 20px",textAlign:"center"}}><a href={u} target="_blank" style={{color:C.info,fontWeight:700,fontSize:15}}>🔗 Abrir {material.titulo}</a><div style={{fontSize:12,color:C.muted,marginTop:8}}>Se abre en una pestaña nueva.</div></div>;
+  else visor=<div style={{padding:"30px 20px",textAlign:"center"}}><a href={u} target="_blank" style={{color:C.info,fontWeight:700}}>⬇️ Descargar {material.titulo}</a><div style={{fontSize:12,color:C.muted,marginTop:8}}>Este formato (Word/Excel/PPT) se descarga para abrir.</div></div>;
+  const puede=seg>=min||yaVisto;
+  return <Modal onClose={onClose} width={720} title={<span>{iconTipo[material.tipo]} {material.titulo}</span>}
+    footer={<>
+      <div style={{marginRight:"auto",fontSize:13,color:C.muted}}>⏱️ Tiempo en pantalla: <b style={{color:C.dark}}>{fmtSeg(seg)}</b></div>
+      <Btn kind="ghost" onClick={onClose}>Cerrar</Btn>
+      <Btn onClick={()=>onVisto(seg)} disabled={!puede}>{yaVisto?"Actualizar visto":puede?"✓ Marcar visto":`Marcar visto (${min-seg}s)`}</Btn>
+    </>}>
+    {visor}
+  </Modal>;
+}
+
+// ═══ QUIZ (motor ÚNICO — antes duplicado en 2 lugares) ════════════════════
+function Quiz({curso,intentoNro,onClose,onResultado,config}){
+  const preguntas=(curso.evaluacion&&curso.evaluacion.preguntas)||[];
+  const notaMin=(curso.evaluacion&&curso.evaluacion.notaMinima)||config.notaMinima||6;
+  const [resp,setResp]=useState({});
+  const [enviado,setEnviado]=useState(null);
+  const enviar=()=>{
+    let correctas=0;
+    preguntas.forEach((p,i)=>{ if(resp[i]===p.correcta) correctas++; });
+    const nota=preguntas.length?Math.round(correctas/preguntas.length*100)/10:0; // 0-10
+    const estado=nota>=notaMin?"aprobado":"reprobado";
+    setEnviado({correctas,total:preguntas.length,nota,estado});
+    onResultado({correctas,total:preguntas.length,nota,estado,intento:intentoNro});
+  };
+  if(enviado){
+    const ok=enviado.estado==="aprobado";
+    return <Modal onClose={onClose} title="Resultado del examen"
+      footer={<Btn onClick={onClose}>Cerrar</Btn>}>
+      <div style={{textAlign:"center",padding:"10px 0 4px"}}>
+        <div style={{fontSize:46}}>{ok?"✅":"❌"}</div>
+        <div style={{fontSize:26,fontWeight:800,color:ok?C.green:C.danger,margin:"6px 0"}}>{enviado.nota.toFixed(1)} / 10</div>
+        <div style={{color:C.muted}}>{enviado.correctas} de {enviado.total} correctas · mínimo {notaMin}</div>
+        <Badge color={ok?C.green:C.danger}>{ok?"APROBADO":"REPROBADO"}</Badge>
+      </div>
+      {config.mostrarRespuestas&&<div style={{marginTop:18}}>
+        {preguntas.map((p,i)=>{const bien=resp[i]===p.correcta; return <div key={i} style={{padding:"8px 0",borderTop:`1px solid ${C.border}`,fontSize:13}}>
+          <div style={{fontWeight:600}}>{bien?"✓":"✗"} {p.preg}</div>
+          {!bien&&<div style={{color:C.green,marginTop:2}}>Correcta: {p.opciones[p.correcta]}</div>}
+        </div>;})}
+      </div>}
+    </Modal>;
+  }
+  const todas=preguntas.every((_,i)=>resp[i]!==undefined);
+  return <Modal onClose={onClose} title={<span>📝 {curso.nombre} — Examen</span>}
+    footer={<><Btn kind="ghost" onClick={onClose}>Cancelar</Btn><Btn onClick={enviar} disabled={!todas}>Enviar respuestas</Btn></>}>
+    <div style={{fontSize:12.5,color:C.muted,marginBottom:14}}>Intento #{intentoNro} · Nota mínima {notaMin} · {preguntas.length} preguntas</div>
+    {preguntas.map((p,i)=><div key={i} style={{marginBottom:16}}>
+      <div style={{fontWeight:600,marginBottom:8}}>{i+1}. {p.preg}</div>
+      {p.opciones.map((o,j)=><label key={j} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 11px",borderRadius:9,border:`1px solid ${resp[i]===j?C.green:C.border}`,background:resp[i]===j?C.pale:"#fff",cursor:"pointer",marginBottom:6}}>
+        <input type="radio" checked={resp[i]===j} onChange={()=>setResp({...resp,[i]:j})}/>{o}
+      </label>)}
+    </div>)}
+  </Modal>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GESTOR — "Mi Capacitación"  (1 pantalla: reemplaza VInduccion+VPorCartera
+//  +VCursosGestor+VMisEvaluaciones)
+// ═══════════════════════════════════════════════════════════════════════════
+function MiCapacitacion({user}){
+  const [cursos,setCursos]=useState(null);
+  const [prog,setProg]=useState({cursos:{}});
+  const [cfg,setCfg]=useState({notaMinima:6,reintentos:3,mostrarRespuestas:true});
+  const [q,setQ]=useState(""),[filtro,setFiltro]=useState("todos");
+  const [cursoSel,setCursoSel]=useState(null);
+  const [player,setPlayer]=useState(null); // {curso,material}
+  const [quiz,setQuiz]=useState(null);
+  const [err,setErr]=useState("");
+  const uid=userUid(user);
+
+  async function cargar(){
+    try{
+      const [cs,pr,cf]=await Promise.all([store.cursos(),store.getProgreso(uid),store.config()]);
+      setCursos(cs.filter(c=>cursoVisible(c,user))); setProg(pr||{cursos:{}}); setCfg(cf);
+    }catch(e){ setErr("No se pudo cargar la capacitación: "+e.message); setCursos([]); }
+  }
+  useEffect(()=>{ cargar(); },[uid]);
+
+  async function marcarVisto(curso,material,segNuevos){
+    const p=JSON.parse(JSON.stringify(prog||{cursos:{}})); if(!p.cursos)p.cursos={};
+    const pc=p.cursos[curso.id]||(p.cursos[curso.id]={materiales:{},examen:null});
+    const prev=pc.materiales[material.id]||{segundos:0};
+    pc.materiales[material.id]={visto:true,segundos:(prev.segundos||0)+(segNuevos||0),ultimaApertura:hoyISO()};
+    setProg(p); setPlayer(null);
+    try{ await store.setProgreso(uid,p); }catch(e){ setErr("No se pudo guardar el progreso: "+e.message); }
+  }
+  async function resultadoExamen(curso,r){
+    const p=JSON.parse(JSON.stringify(prog||{cursos:{}})); if(!p.cursos)p.cursos={};
+    const pc=p.cursos[curso.id]||(p.cursos[curso.id]={materiales:{},examen:null});
+    const ex=pc.examen||{mejorNota:0,aprobado:false,intentos:0};
+    ex.intentos=(ex.intentos||0)+1; ex.mejorNota=Math.max(ex.mejorNota||0,r.nota); ex.aprobado=ex.aprobado||r.estado==="aprobado"; ex.ultimoIntento=hoyISO();
+    pc.examen=ex; setProg(p);
+    try{
+      await store.setProgreso(uid,p);
+      await store.registrarIntento({uid,cursoId:curso.id,cursoNombre:curso.nombre,gestorNombre:user.name||user.user,legajo:user.legajo||"",fecha:hoyISO(),nota:r.nota,correctas:r.correctas,total:r.total,estado:r.estado,intento:ex.intentos});
+    }catch(e){ setErr("No se pudo registrar el examen: "+e.message); }
+  }
+
+  if(cursos===null) return <Spinner/>;
+  const conEstado=cursos.map(c=>({c,pr:progresoCurso(c,prog)}));
+
+  // ── Presentación de un curso (estilo campus) ──
+  if(cursoSel){
+    const c=cursoSel, ai=audInfo(c.audiencia), pr=progresoCurso(c,prog);
+    const pcc=(prog.cursos&&prog.cursos[c.id])||{materiales:{}};
+    return <div>
+      <Btn kind="ghost" sm onClick={()=>setCursoSel(null)}>← Mis cursos</Btn>
+      <div style={{marginTop:12,borderRadius:18,overflow:"hidden",boxShadow:"0 6px 20px rgba(30,51,32,.12)"}}>
+        <div style={{background:`linear-gradient(120deg, ${ai.color}, ${C.dark})`,color:"#fff",padding:"26px 26px 22px"}}>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
+            <span style={{background:"rgba(255,255,255,.22)",padding:"3px 11px",borderRadius:20,fontSize:12,fontWeight:700}}>{ai.icon} {ai.label}{c.cartera?" · "+c.cartera:""}</span>
+            {pr.completo&&<span style={{background:"rgba(255,255,255,.22)",padding:"3px 11px",borderRadius:20,fontSize:12,fontWeight:700}}>✓ Completo</span>}
+          </div>
+          <div style={{fontSize:26,fontWeight:800,lineHeight:1.15}}>{c.nombre}</div>
+          <div style={{opacity:.9,marginTop:6,maxWidth:"60ch",lineHeight:1.5}}>{c.descripcion}</div>
+          <div style={{display:"flex",gap:12,alignItems:"center",marginTop:18}}>
+            <div style={{flex:1,height:9,background:"rgba(255,255,255,.25)",borderRadius:6,overflow:"hidden",maxWidth:340}}>
+              <div style={{height:"100%",width:Math.min(100,pr.pct)+"%",background:"#fff",transition:"width .3s"}}/>
+            </div>
+            <span style={{fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>{pr.vistos}/{pr.total} materiales · {pr.pct}%</span>
+          </div>
+        </div>
+      </div>
+
+      <h3 style={{fontSize:16,fontWeight:800,color:C.dark,margin:"26px 0 12px"}}>📋 Contenido</h3>
+      {materialesDe(c).map(mat=>{
+        const vis=pcc.materiales&&pcc.materiales[mat.id]&&pcc.materiales[mat.id].visto;
+        return <div key={mat.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",border:`1px solid ${C.border}`,borderRadius:11,marginBottom:7,background:vis?C.pale:"#fff"}}>
+          <span style={{width:30,height:30,borderRadius:8,background:vis?C.green:C.pale,color:vis?"#fff":C.muted,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{vis?"✓":iconTipo[mat.tipo]||"📎"}</span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:600,fontSize:14}}>{mat.titulo}</div>
+            <div style={{fontSize:11.5,color:C.muted}}>{mat.tipo}{mat.tamanio?" · "+fmtBytes(mat.tamanio):""}{mat.actualizadoEn?" · act. "+mat.actualizadoEn:""}</div>
+          </div>
+          <Btn sm kind={vis?"ghost":"primary"} onClick={()=>setPlayer({curso:c,material:mat})}>{vis?"Repasar":"Abrir"}</Btn>
+        </div>;
+      })}
+
+      {c.evaluacion&&<div style={{marginTop:8,padding:"16px 18px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:13,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+        <div style={{fontSize:26}}>📝</div>
+        <div style={{flex:1,minWidth:180}}>
+          <div style={{fontWeight:800,fontSize:15}}>Examen del curso</div>
+          <div style={{fontSize:12.5,color:C.muted}}>{pr.examen?`Mejor nota: ${(pr.examen.mejorNota||0).toFixed(1)}/10 · ${pr.examen.intentos||0}/${cfg.reintentos} intentos`:"Todavía no lo rendiste"} · aprobás con {c.evaluacion.notaMinima||cfg.notaMinima}</div>
+        </div>
+        {pr.examen&&pr.examen.aprobado
+          ?<Badge color={C.green}>✓ Aprobado</Badge>
+          :<Btn disabled={pr.examen&&(pr.examen.intentos||0)>=cfg.reintentos} onClick={()=>setQuiz({curso:c,nro:(pr.examen&&pr.examen.intentos||0)+1})}>{pr.examen&&(pr.examen.intentos||0)>=cfg.reintentos?"Sin intentos":"Rendir examen"}</Btn>}
+      </div>}
+
+      {player&&<Player material={player.material} yaVisto={!!((prog.cursos&&prog.cursos[player.curso.id]&&prog.cursos[player.curso.id].materiales||{})[player.material.id])} onClose={()=>setPlayer(null)} onVisto={seg=>marcarVisto(player.curso,player.material,seg)}/>}
+      {quiz&&<Quiz curso={quiz.curso} intentoNro={quiz.nro} config={cfg} onClose={()=>setQuiz(null)} onResultado={r=>resultadoExamen(quiz.curso,r)}/>}
+    </div>;
+  }
+
+  // ── Lista de cursos (tarjetas estilo campus) ──
+  const filtrados=conEstado.filter(({c,pr})=>{
+    if(q&&!norm(c.nombre+" "+(c.descripcion||"")).includes(norm(q))) return false;
+    if(filtro==="pendientes"&&pr.completo) return false;
+    if(filtro==="completos"&&!pr.completo) return false;
+    return true;
+  });
+  return <div>
+    <h2 style={{fontSize:24,fontWeight:800,color:C.dark,marginBottom:4}}>🎓 Mi Capacitación</h2>
+    <div style={{color:C.muted,marginBottom:18,fontSize:14}}>Hola {user.name||user.user}. Estos son tus cursos asignados.</div>
+    {err&&<div style={{background:"#fce8e8",border:`1px solid ${C.danger}55`,color:C.danger,padding:"9px 13px",borderRadius:9,marginBottom:14,fontSize:13}}>{err}</div>}
+    <Toolbar>
+      <Buscador value={q} onChange={setQ} ph="Buscar curso…"/>
+      {["todos","pendientes","completos"].map(f=><Btn key={f} sm kind={filtro===f?"primary":"ghost"} onClick={()=>setFiltro(f)}>{f==="todos"?"Todos":f==="pendientes"?"Pendientes":"Completos"}</Btn>)}
+      <Badge color={C.info}>{conEstado.filter(x=>x.pr.completo).length}/{conEstado.length} completos</Badge>
+    </Toolbar>
+    {filtrados.length===0&&<Empty icon="🗂️">No hay cursos para mostrar.</Empty>}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:16}}>
+      {filtrados.map(({c,pr})=>{
+        const ai=audInfo(c.audiencia);
+        return <div key={c.id} onClick={()=>setCursoSel(c)} style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",cursor:"pointer",display:"flex",flexDirection:"column"}}>
+          <div style={{height:82,background:`linear-gradient(120deg, ${ai.color}, ${C.dark})`,position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:34}}>{ai.icon}</span>
+            {pr.completo&&<span style={{position:"absolute",top:8,right:8,background:"rgba(255,255,255,.92)",color:C.green,fontSize:11,fontWeight:800,padding:"2px 8px",borderRadius:20}}>✓ Completo</span>}
+            {pr.sospechoso&&<span style={{position:"absolute",top:8,left:8,background:"rgba(255,255,255,.92)",color:C.warn,fontSize:11,fontWeight:800,padding:"2px 8px",borderRadius:20}}>⚠</span>}
+          </div>
+          <div style={{padding:14,flex:1,display:"flex",flexDirection:"column"}}>
+            <div style={{fontSize:11,fontWeight:700,color:ai.color,textTransform:"uppercase",letterSpacing:.4,marginBottom:3}}>{ai.label}{c.cartera?" · "+c.cartera:""}</div>
+            <div style={{fontWeight:700,color:C.dark,fontSize:15.5,lineHeight:1.25,marginBottom:5}}>{c.nombre}</div>
+            <div style={{fontSize:12.5,color:C.muted,flex:1,marginBottom:11,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{c.descripcion}</div>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+              <div style={{flex:1}}><ProgBar pct={pr.pct}/></div>
+              <span style={{fontSize:11.5,color:C.muted,whiteSpace:"nowrap"}}>{pr.pct}%</span>
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"center",fontSize:11.5,color:C.muted}}>
+              <span>{pr.vistos}/{pr.total} materiales</span>
+              {c.evaluacion&&<span>· 📝 examen</span>}
+            </div>
+          </div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SUPERVISOR — "Cursos"  (ABM único: fusiona SVContenidoMat+SVCursos+SVEvaluaciones)
+// ═══════════════════════════════════════════════════════════════════════════
+function CursosAdmin(){
+  const [cursos,setCursos]=useState(null);
+  const [q,setQ]=useState(""),[fAud,setFAud]=useState("todas"),[fAct,setFAct]=useState("todos");
+  const [editando,setEditando]=useState(null); // curso en edición ó null
+  const [msg,setMsg]=useState("");
+
+  async function cargar(){ try{ setCursos(await store.cursos(true)); }catch(e){ setMsg("Error cargando cursos: "+e.message); setCursos([]); } }
+  useEffect(()=>{ cargar(); },[]);
+
+  async function toggleActivo(c){ await store.guardarCurso({...c,activo:!c.activo}); cargar(); }
+  async function borrar(c){ if(!window.confirm("¿Borrar el curso “"+c.nombre+"”? No se puede deshacer.")) return; await store.borrarCurso(c.id); cargar(); }
+  async function duplicar(c){ const copia={...JSON.parse(JSON.stringify(c)),id:null,nombre:c.nombre+" (copia)",activo:false}; await store.guardarCurso(copia); cargar(); }
+
+  if(editando!==null) return <CursoEditor curso={editando} onCancel={()=>setEditando(null)} onSaved={()=>{setEditando(null);cargar();}}/>;
+  if(cursos===null) return <Spinner/>;
+
+  const filtrados=cursos.filter(c=>{
+    if(q&&!norm(c.nombre+" "+(c.descripcion||"")).includes(norm(q))) return false;
+    if(fAud!=="todas"&&c.audiencia!==fAud) return false;
+    if(fAct==="activos"&&!c.activo) return false;
+    if(fAct==="inactivos"&&c.activo) return false;
+    return true;
+  });
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
+      <h2 style={{fontSize:22,fontWeight:800,color:C.dark,flex:1}}>📚 Cursos</h2>
+      <Btn onClick={()=>setEditando({})}>+ Nuevo curso</Btn>
+    </div>
+    <div style={{color:C.muted,marginBottom:16,fontSize:14}}>Un curso reúne materiales y (opcional) un examen. La audiencia define quién lo ve.</div>
+    {msg&&<div style={{background:"#fff3d6",color:"#a5730a",padding:"9px 13px",borderRadius:9,marginBottom:14,fontSize:13}}>{msg}</div>}
+    <Toolbar>
+      <Buscador value={q} onChange={setQ} ph="Buscar curso…"/>
+      <Select value={fAud} onChange={e=>setFAud(e.target.value)} style={{flex:"0 0 auto",width:"auto"}}>
+        <option value="todas">Toda audiencia</option>
+        {AUDIENCIAS.map(a=><option key={a.v} value={a.v}>{a.icon} {a.label}</option>)}
+      </Select>
+      <Select value={fAct} onChange={e=>setFAct(e.target.value)} style={{flex:"0 0 auto",width:"auto"}}>
+        <option value="todos">Activos e inactivos</option>
+        <option value="activos">Solo activos</option>
+        <option value="inactivos">Solo inactivos</option>
+      </Select>
+      <Badge color={C.muted}>{filtrados.length} curso(s)</Badge>
+    </Toolbar>
+    {filtrados.length===0&&<Empty icon="📚">No hay cursos. Creá el primero con “+ Nuevo curso”.</Empty>}
+    {filtrados.map(c=>{
+      const ai=audInfo(c.audiencia); const mats=materialesDe(c);
+      return <Card key={c.id} style={{display:"flex",gap:14,alignItems:"center",opacity:c.activo?1:.6}}>
+        <div style={{fontSize:26}}>{ai.icon}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontWeight:700,color:C.dark}}>{c.nombre}</span>
+            <Badge color={ai.color}>{ai.label}{c.cartera?" · "+c.cartera:""}</Badge>
+            {!c.activo&&<Badge color={C.muted}>Inactivo</Badge>}
+          </div>
+          <div style={{fontSize:12.5,color:C.muted,margin:"3px 0 6px"}}>{c.descripcion||"—"}</div>
+          <div style={{fontSize:12,color:C.muted}}>{mats.length} material(es) · {c.evaluacion?`examen (${(c.evaluacion.preguntas||[]).length} preg.)`:"sin examen"}{c.asignadosA&&c.asignadosA.length?` · ${c.asignadosA.length} asignado(s)`:""}</div>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          <Btn sm kind="ghost" onClick={()=>toggleActivo(c)}>{c.activo?"Desactivar":"Activar"}</Btn>
+          <Btn sm kind="ghost" onClick={()=>duplicar(c)}>Duplicar</Btn>
+          <Btn sm kind="ghost" onClick={()=>setEditando(c)}>Editar</Btn>
+          <Btn sm kind="danger" onClick={()=>borrar(c)}>Borrar</Btn>
+        </div>
+      </Card>;
+    })}
+  </div>;
+}
+
+// ─── Editor de curso (datos → módulos/materiales → examen → audiencia) ────
+function CursoEditor({curso,onCancel,onSaved}){
+  const [c,setC]=useState(()=>({id:curso.id||null,nombre:curso.nombre||"",descripcion:curso.descripcion||"",audiencia:curso.audiencia||"continua",cartera:curso.cartera||"",activo:curso.activo!==false,orden:curso.orden||0,asignadosA:curso.asignadosA||[],materiales:curso.materiales?JSON.parse(JSON.stringify(curso.materiales)):(curso.modulos?[].concat.apply([],curso.modulos.map(m=>m.materiales||[])):[]),evaluacion:curso.evaluacion?JSON.parse(JSON.stringify(curso.evaluacion)):null}));
+  const [carteras,setCarteras]=useState([]);
+  const [gestores,setGestores]=useState([]);
+  const [subiendo,setSubiendo]=useState(null); // "mi-mj"
+  const [err,setErr]=useState(""),[guardando,setGuardando]=useState(false);
+  const set=patch=>setC(prev=>({...prev,...patch}));
+
+  useEffect(()=>{ store.usuarios().then(us=>{
+    setGestores(us.filter(u=>u.role==="gestor"||u.role==="ingreso"));
+    const cs=[...new Set(us.map(u=>u.cliente||u.cartera).filter(Boolean))]; setCarteras(cs.length?cs:["Banco Santander","Banco Galicia","QIDA"]);
+  }).catch(()=>setCarteras(["Banco Santander","Banco Galicia","QIDA"])); },[]);
+
+  // materiales (directo, sin módulos — estilo Google Classroom)
+  const [dragOver,setDragOver]=useState(false);
+  const addFiles=async(files)=>{
+    for(const f of files){
+      setSubiendo(f.name); setErr("");
+      try{ const r=await subirArchivo(f,c.cartera||"General");
+        const mat={id:uidCorto(),titulo:f.name.replace(/\.[^.]+$/,""),tipo:tipoDe(f.name),url:r.url,path:r.path,tamanio:r.size||f.size,actualizadoEn:hoyISO(),revisarCadaDias:0,demo:!!r.demo};
+        setC(prev=>({...prev,materiales:[...(prev.materiales||[]),mat]}));
+      }catch(e){ setErr("No se pudo subir “"+f.name+"”: "+e.message); }
+    }
+    setSubiendo(null);
+  };
+  const addLink=()=>{ var u=window.prompt("Pegá el link (YouTube, Drive, cualquier URL):"); if(!u||!u.trim())return; u=u.trim();
+    const mat={id:uidCorto(),titulo:tipoDe(u)==="youtube"?"Video de YouTube":"Enlace",tipo:tipoDe(u),url:u,tamanio:0,actualizadoEn:hoyISO(),revisarCadaDias:0,link:true};
+    setC(prev=>({...prev,materiales:[...(prev.materiales||[]),mat]}));
+  };
+  const setMat=(mj,patch)=>set({materiales:(c.materiales||[]).map((x,j)=>j===mj?{...x,...patch}:x)});
+  const delMat=mj=>set({materiales:(c.materiales||[]).filter((_,j)=>j!==mj)});
+
+  // examen
+  const toggleExamen=()=>set({evaluacion:c.evaluacion?null:{notaMinima:6,preguntas:[{preg:"",opciones:["","","",""],correcta:0}]}});
+  const setEv=patch=>set({evaluacion:{...c.evaluacion,...patch}});
+  const setPreg=(pi,patch)=>setEv({preguntas:c.evaluacion.preguntas.map((p,i)=>i===pi?{...p,...patch}:p)});
+  const addPreg=()=>setEv({preguntas:[...c.evaluacion.preguntas,{preg:"",opciones:["","","",""],correcta:0}]});
+  const delPreg=pi=>setEv({preguntas:c.evaluacion.preguntas.filter((_,i)=>i!==pi)});
+
+  async function guardar(){
+    if(!c.nombre.trim()){ setErr("Poné un nombre al curso."); return; }
+    if(c.audiencia==="cartera"&&!c.cartera){ setErr("Elegí la cartera del curso."); return; }
+    if(c.evaluacion){
+      for(const p of c.evaluacion.preguntas){ if(!p.preg.trim()||p.opciones.some(o=>!o.trim())){ setErr("Completá todas las preguntas y opciones del examen (o quitá el examen)."); return; } }
+    }
+    setGuardando(true); setErr("");
+    try{ await store.guardarCurso({...c,cartera:c.audiencia==="cartera"?c.cartera:null}); onSaved(); }
+    catch(e){ setErr("No se pudo guardar: "+e.message); setGuardando(false); }
+  }
+
+  const esNuevo=!c.id;
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+      <Btn kind="ghost" sm onClick={onCancel}>← Volver</Btn>
+      <h2 style={{fontSize:20,fontWeight:800,color:C.dark}}>{esNuevo?"Nuevo curso":"Editar curso"}</h2>
+    </div>
+    {err&&<div style={{background:"#fce8e8",border:`1px solid ${C.danger}55`,color:C.danger,padding:"9px 13px",borderRadius:9,marginBottom:14,fontSize:13}}>{err}</div>}
+
+    <Card>
+      <Field label="Nombre del curso"><Input value={c.nombre} onChange={e=>set({nombre:e.target.value})} placeholder="Ej: Guion Santander"/></Field>
+      <Field label="Descripción"><Textarea value={c.descripcion} onChange={e=>set({descripcion:e.target.value})} placeholder="De qué trata, para quién…"/></Field>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+        <div style={{flex:"1 1 200px"}}><Field label="Audiencia (quién lo ve)">
+          <Select value={c.audiencia} onChange={e=>set({audiencia:e.target.value})}>
+            {AUDIENCIAS.map(a=><option key={a.v} value={a.v}>{a.icon} {a.label} — {a.desc}</option>)}
+          </Select>
+        </Field></div>
+        {c.audiencia==="cartera"&&<div style={{flex:"1 1 200px"}}><Field label="Cartera">
+          <Select value={c.cartera} onChange={e=>set({cartera:e.target.value})}>
+            <option value="">— Elegí —</option>
+            {carteras.map(x=><option key={x} value={x}>{x}</option>)}
+          </Select>
+        </Field></div>}
+        <div style={{flex:"0 0 auto"}}><Field label="Estado">
+          <Btn kind={c.activo?"primary":"ghost"} onClick={()=>set({activo:!c.activo})}>{c.activo?"✓ Activo":"Inactivo"}</Btn>
+        </Field></div>
+      </div>
+      <Field label="Asignación puntual (opcional — además de la audiencia)" hint="Elegí gestores específicos para refuerzo. Vacío = solo por audiencia.">
+        <div style={{maxHeight:120,overflowY:"auto",border:`1px solid ${C.border}`,borderRadius:9,padding:8,display:"flex",flexWrap:"wrap",gap:6}}>
+          {gestores.length===0&&<span style={{fontSize:12,color:C.muted}}>Sin gestores cargados.</span>}
+          {gestores.map(g=>{const on=c.asignadosA.includes(g.uid); return <span key={g.uid} onClick={()=>set({asignadosA:on?c.asignadosA.filter(x=>x!==g.uid):[...c.asignadosA,g.uid]})} style={{cursor:"pointer",padding:"3px 10px",borderRadius:20,fontSize:12,border:`1px solid ${on?C.green:C.border}`,background:on?C.pale:"#fff",color:on?C.dark:C.muted}}>{on?"✓ ":""}{g.name||g.user} {g.legajo?`(${g.legajo})`:""}</span>;})}
+        </div>
+      </Field>
+    </Card>
+
+    <Card>
+      <div style={{fontWeight:700,color:C.dark,marginBottom:10}}>📎 Material del curso <span style={{fontWeight:400,fontSize:12,color:C.muted}}>— PDF, Word, Excel, PPT, video, audio, imagen o un link de YouTube</span></div>
+      <div
+        onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+        onDragLeave={()=>setDragOver(false)}
+        onDrop={e=>{e.preventDefault();setDragOver(false);if(e.dataTransfer.files&&e.dataTransfer.files.length)addFiles(Array.from(e.dataTransfer.files));}}
+        style={{border:`2px dashed ${dragOver?C.green:C.border}`,background:dragOver?C.pale:C.bg,borderRadius:12,padding:"22px 16px",textAlign:"center",marginBottom:12,transition:".15s"}}>
+        <div style={{fontSize:30,marginBottom:6}}>{subiendo?"⏳":"📤"}</div>
+        <div style={{fontSize:14,color:C.dark,fontWeight:600}}>{subiendo?("Subiendo "+subiendo+"…"):"Arrastrá los archivos acá"}</div>
+        <div style={{fontSize:12.5,color:C.muted,marginTop:6,display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+          <label style={{color:C.info,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>elegir del disco<input type="file" multiple style={{display:"none"}} onChange={e=>{addFiles(Array.from(e.target.files));e.target.value="";}}/></label>
+          <span>·</span>
+          <span onClick={addLink} style={{color:C.info,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>pegar un link 🔗</span>
+        </div>
+      </div>
+      {(c.materiales||[]).length===0&&<div style={{fontSize:12.5,color:C.muted,textAlign:"center",padding:"2px 0 4px"}}>Todavía no agregaste material.</div>}
+      {(c.materiales||[]).map((mat,mj)=><div key={mat.id} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 10px",background:C.bg,borderRadius:9,marginBottom:6}}>
+        <span style={{fontSize:18}}>{iconTipo[mat.tipo]||"📎"}</span>
+        <Input value={mat.titulo} onChange={e=>setMat(mj,{titulo:e.target.value})} style={{flex:1,padding:"6px 10px"}}/>
+        <span title="Revisar cada N días (0 = no vence)" style={{fontSize:11,color:C.muted}}>vence</span>
+        <input type="number" min="0" value={mat.revisarCadaDias||0} onChange={e=>setMat(mj,{revisarCadaDias:+e.target.value})} style={{width:56,padding:"6px 8px",border:`1px solid ${C.border}`,borderRadius:8}}/>
+        {mat.demo&&<Badge color={C.warn}>demo</Badge>}
+        <Btn sm kind="danger" onClick={()=>delMat(mj)}>✕</Btn>
+      </div>)}
+    </Card>
+
+    <Card>
+      <div style={{display:"flex",alignItems:"center",marginBottom:c.evaluacion?12:0}}>
+        <div style={{fontWeight:700,color:C.dark,flex:1}}>📝 Examen del curso {c.evaluacion?"":"(opcional)"}</div>
+        <Btn sm kind={c.evaluacion?"danger":"ghost"} onClick={toggleExamen}>{c.evaluacion?"Quitar examen":"+ Agregar examen"}</Btn>
+      </div>
+      {c.evaluacion&&<div>
+        <Field label="Nota mínima para aprobar (0-10)"><input type="number" min="1" max="10" value={c.evaluacion.notaMinima} onChange={e=>setEv({notaMinima:+e.target.value})} style={{...inStyle,width:120}}/></Field>
+        {c.evaluacion.preguntas.map((p,pi)=><div key={pi} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:12,marginBottom:10}}>
+          <div style={{display:"flex",gap:8,marginBottom:8}}>
+            <Input value={p.preg} onChange={e=>setPreg(pi,{preg:e.target.value})} placeholder={"Pregunta "+(pi+1)} style={{flex:1}}/>
+            {c.evaluacion.preguntas.length>1&&<Btn sm kind="danger" onClick={()=>delPreg(pi)}>✕</Btn>}
+          </div>
+          {p.opciones.map((o,oi)=><div key={oi} style={{display:"flex",gap:8,alignItems:"center",marginBottom:5}}>
+            <input type="radio" name={"correcta-"+pi} checked={p.correcta===oi} onChange={()=>setPreg(pi,{correcta:oi})} title="Marcar como correcta"/>
+            <Input value={o} onChange={e=>setPreg(pi,{opciones:p.opciones.map((x,k)=>k===oi?e.target.value:x)})} placeholder={"Opción "+(oi+1)} style={{flex:1,padding:"6px 10px",border:`1px solid ${p.correcta===oi?C.green:C.border}`}}/>
+          </div>)}
+          <div style={{fontSize:11,color:C.muted,marginTop:4}}>El punto marcado ● es la respuesta correcta.</div>
+        </div>)}
+        <Btn sm kind="ghost" onClick={addPreg}>+ Pregunta</Btn>
+      </div>}
+    </Card>
+
+    <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginBottom:40}}>
+      <Btn kind="ghost" onClick={onCancel}>Cancelar</Btn>
+      <Btn onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"💾 Guardar curso"}</Btn>
+    </div>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SUPERVISOR — "Seguimiento"  (fusiona VSeguimientoCap + Historial + Ruta)
+// ═══════════════════════════════════════════════════════════════════════════
+function Seguimiento(){
+  const [tab,setTab]=useState("equipo");
+  const [cursos,setCursos]=useState(null),[usuarios,setUsuarios]=useState([]),[progAll,setProgAll]=useState({}),[intentos,setIntentos]=useState([]);
+  const [q,setQ]=useState(""),[fCart,setFCart]=useState("todas"),[fRol,setFRol]=useState("todos"),[fEst,setFEst]=useState("todos");
+  const [detalle,setDetalle]=useState(null);
+
+  async function cargar(){
+    try{
+      const [cs,us,pa,it]=await Promise.all([store.cursos(),store.usuarios(),store.allProgreso(),store.intentos()]);
+      setCursos(cs); setUsuarios(us.filter(u=>u.role==="gestor"||u.role==="ingreso")); setProgAll(pa); setIntentos(it);
+    }catch(e){ setCursos([]); }
+  }
+  useEffect(()=>{ cargar(); },[]);
+  if(cursos===null) return <Spinner/>;
+
+  const carteras=[...new Set(usuarios.map(u=>u.cliente||u.cartera).filter(Boolean))];
+  // fila por gestor
+  const filas=usuarios.map(u=>{
+    const uid=userUid(u); const prog=progAll[uid]||{cursos:{}};
+    const misCursos=cursos.filter(c=>cursoVisible(c,u));
+    const est=misCursos.map(c=>progresoCurso(c,prog));
+    const total=est.length; const completos=est.filter(e=>e.completo).length;
+    const vistM=est.reduce((a,e)=>a+e.vistos,0), totM=est.reduce((a,e)=>a+e.total,0);
+    const pct=totM?Math.round(vistM/totM*100):(total&&completos===total?100:0);
+    const seg=est.reduce((a,e)=>a+e.segundos,0);
+    const sospechoso=est.some(e=>e.sospechoso);
+    const examOk=est.filter(e=>e.examOk).length;
+    return {u,uid,total,completos,pct,seg,sospechoso,examTotal:misCursos.filter(c=>c.evaluacion).length,examOk,estado:total&&completos===total?"completo":"pendiente"};
+  });
+  const filasF=filas.filter(f=>{
+    if(q&&!norm((f.u.name||f.u.user)+" "+(f.u.legajo||"")).includes(norm(q))) return false;
+    if(fCart!=="todas"&&String(f.u.cliente||f.u.cartera)!==fCart) return false;
+    if(fRol==="nuevos"&&f.u.role!=="ingreso") return false;
+    if(fRol==="continuos"&&f.u.role!=="gestor") return false;
+    if(fEst==="completos"&&f.estado!=="completo") return false;
+    if(fEst==="pendientes"&&f.estado!=="pendiente") return false;
+    if(fEst==="sospechosos"&&!f.sospechoso) return false;
+    return true;
+  });
+
+  function exportarExcel(){
+    const rows=filasF.map(f=>({Gestor:f.u.name||f.u.user,Legajo:f.u.legajo||"",Cartera:f.u.cliente||f.u.cartera||"",Rol:f.u.role,"Cursos completos":`${f.completos}/${f.total}`,"% avance":f.pct,"Tiempo":fmtSeg(f.seg),"Exámenes OK":`${f.examOk}/${f.examTotal}`,"Alerta":f.sospechoso?"Revisar tiempos":""}));
+    const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Seguimiento"); XLSX.writeFile(wb,"seguimiento-capacitacion-"+hoyISO()+".xlsx");
+  }
+
+  // historial de intentos
+  const intF=intentos.filter(it=>{
+    if(q&&!norm((it.gestorNombre||"")+" "+(it.cursoNombre||"")).includes(norm(q))) return false;
+    if(fEst==="aprobados"&&it.estado!=="aprobado") return false;
+    if(fEst==="reprobados"&&it.estado!=="reprobado") return false;
+    return true;
+  });
+
+  return <div>
+    <h2 style={{fontSize:22,fontWeight:800,color:C.dark,marginBottom:4}}>📊 Seguimiento</h2>
+    <div style={{color:C.muted,marginBottom:14,fontSize:14}}>Avance real del equipo: materiales vistos, tiempo y exámenes.</div>
+    <div style={{display:"flex",gap:8,marginBottom:16}}>
+      <Btn sm kind={tab==="equipo"?"primary":"ghost"} onClick={()=>setTab("equipo")}>Equipo</Btn>
+      <Btn sm kind={tab==="historial"?"primary":"ghost"} onClick={()=>setTab("historial")}>Historial de exámenes</Btn>
+    </div>
+
+    <Toolbar>
+      <Buscador value={q} onChange={setQ} ph={tab==="equipo"?"Buscar gestor…":"Buscar gestor o curso…"}/>
+      {tab==="equipo"&&<>
+        <Select value={fCart} onChange={e=>setFCart(e.target.value)} style={{width:"auto"}}><option value="todas">Toda cartera</option>{carteras.map(x=><option key={x} value={x}>{x}</option>)}</Select>
+        <Select value={fRol} onChange={e=>setFRol(e.target.value)} style={{width:"auto"}}><option value="todos">Todos los roles</option><option value="nuevos">Nuevos (inducción)</option><option value="continuos">Continuos</option></Select>
+        <Select value={fEst} onChange={e=>setFEst(e.target.value)} style={{width:"auto"}}><option value="todos">Todo estado</option><option value="completos">Completos</option><option value="pendientes">Pendientes</option><option value="sospechosos">A revisar (tiempos)</option></Select>
+        <Btn sm kind="ghost" onClick={exportarExcel}>⬇️ Excel</Btn>
+      </>}
+      {tab==="historial"&&<Select value={fEst} onChange={e=>setFEst(e.target.value)} style={{width:"auto"}}><option value="todos">Todos</option><option value="aprobados">Aprobados</option><option value="reprobados">Reprobados</option></Select>}
+    </Toolbar>
+
+    {tab==="equipo"&&<Card style={{padding:0,overflow:"hidden"}}>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13.5}}>
+        <thead><tr style={{background:C.pale,color:C.dark,textAlign:"left"}}>
+          {["Gestor","Cartera","Avance","Tiempo","Exámenes",""].map((h,i)=><th key={i} style={{padding:"10px 12px",fontWeight:700}}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {filasF.length===0&&<tr><td colSpan={6}><Empty icon="👤">Sin gestores para el filtro.</Empty></td></tr>}
+          {filasF.map(f=><React.Fragment key={f.uid}>
+            <tr style={{borderTop:`1px solid ${C.border}`}}>
+              <td style={{padding:"10px 12px"}}><b>{f.u.name||f.u.user}</b> <span style={{color:C.muted,fontSize:12}}>{f.u.legajo}</span> {f.u.role==="ingreso"&&<Badge color={C.info}>nuevo</Badge>} {f.sospechoso&&<Badge color={C.warn}>⚠</Badge>}</td>
+              <td style={{padding:"10px 12px",color:C.muted}}>{f.u.cliente||f.u.cartera||"—"}</td>
+              <td style={{padding:"10px 12px",minWidth:150}}><div style={{display:"flex",gap:8,alignItems:"center"}}><div style={{flex:1}}><ProgBar pct={f.pct}/></div><span style={{whiteSpace:"nowrap",color:C.muted,fontSize:12}}>{f.completos}/{f.total}</span></div></td>
+              <td style={{padding:"10px 12px",color:C.muted}}>{fmtSeg(f.seg)}</td>
+              <td style={{padding:"10px 12px"}}>{f.examTotal?`${f.examOk}/${f.examTotal}`:"—"}</td>
+              <td style={{padding:"10px 12px"}}><Btn sm kind="ghost" onClick={()=>setDetalle(detalle===f.uid?null:f.uid)}>{detalle===f.uid?"▾":"Ver"}</Btn></td>
+            </tr>
+            {detalle===f.uid&&<tr><td colSpan={6} style={{padding:"0 12px 12px",background:C.bg}}>
+              {cursos.filter(c=>cursoVisible(c,f.u)).map(c=>{const e=progresoCurso(c,progAll[f.uid]||{cursos:{}}); return <div key={c.id} style={{display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:13}}>
+                <span style={{flex:1}}>{audInfo(c.audiencia).icon} {c.nombre}</span>
+                <span style={{color:C.muted}}>{e.vistos}/{e.total} vistos</span>
+                <span style={{width:90}}><ProgBar pct={e.pct}/></span>
+                {c.evaluacion&&<Badge color={e.examOk?C.green:C.muted}>{e.examen?`${(e.examen.mejorNota||0).toFixed(1)}`:"sin rendir"}</Badge>}
+                {e.completo&&<Badge color={C.green}>✓</Badge>}
+              </div>;})}
+            </td></tr>}
+          </React.Fragment>)}
+        </tbody>
+      </table></div>
+    </Card>}
+
+    {tab==="historial"&&<Card style={{padding:0,overflow:"hidden"}}>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13.5}}>
+        <thead><tr style={{background:C.pale,color:C.dark,textAlign:"left"}}>
+          {["Fecha","Gestor","Curso","Nota","Intento","Estado"].map((h,i)=><th key={i} style={{padding:"10px 12px",fontWeight:700}}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {intF.length===0&&<tr><td colSpan={6}><Empty icon="📝">Sin exámenes rendidos.</Empty></td></tr>}
+          {intF.map((it,i)=><tr key={i} style={{borderTop:`1px solid ${C.border}`}}>
+            <td style={{padding:"9px 12px",color:C.muted}}>{it.fecha}</td>
+            <td style={{padding:"9px 12px"}}><b>{it.gestorNombre}</b> <span style={{color:C.muted,fontSize:12}}>{it.legajo}</span></td>
+            <td style={{padding:"9px 12px"}}>{it.cursoNombre}</td>
+            <td style={{padding:"9px 12px",fontWeight:700,color:it.estado==="aprobado"?C.green:C.danger}}>{(it.nota||0).toFixed(1)}</td>
+            <td style={{padding:"9px 12px",color:C.muted}}>#{it.intento}</td>
+            <td style={{padding:"9px 12px"}}><Badge color={it.estado==="aprobado"?C.green:C.danger}>{it.estado}</Badge></td>
+          </tr>)}
+        </tbody>
+      </table></div>
+    </Card>}
+  </div>;
+}
+
+// ═══ SHELL + LOGIN + APP ══════════════════════════════════════════════════
+function Login({onLogin}){
+  const [u,setU]=useState(""),[p,setP]=useState(""),[err,setErr]=useState(""),[load,setLoad]=useState(false);
+  const go=async()=>{
+    setLoad(true); setErr("");
+    if(window.firebaseConfigured){
+      try{
+        const email=u.includes("@")?u.trim():`${u.trim()}@dasaargentina.com`;
+        const cred=await window.auth.signInWithEmailAndPassword(email,p);
+        const doc=await window.db.collection("usuarios").doc(cred.user.uid).get();
+        if(doc.exists) onLogin({...doc.data(),uid:cred.user.uid,email:cred.user.email});
+        else { setErr("Usuario sin perfil."); await window.auth.signOut(); }
+      }catch(e){ setErr(e.code==="auth/wrong-password"||e.code==="auth/user-not-found"?"Usuario o contraseña incorrectos.":"Error de conexión."); }
+    } else setErr("Firebase no configurado — usá los accesos demo.");
+    setLoad(false);
+  };
+  const demo=role=>onLogin(DEMO.usuarios.find(x=>x.role===role));
+  return <div style={{minHeight:"100vh",background:C.dark,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div style={{width:390,background:"#fff",borderRadius:20,overflow:"hidden",boxShadow:"0 16px 48px rgba(0,0,0,.4)"}}>
+      <div style={{background:C.green,padding:"30px 32px 24px",textAlign:"center"}}>
+        <div style={{color:"#fff",fontSize:22,fontWeight:800,letterSpacing:1}}>DASA</div>
+        <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:6,letterSpacing:3}}>CAPACITACIÓN</div>
+      </div>
+      <div style={{padding:"24px 30px 28px"}}>
+        <div style={{fontSize:17,fontWeight:700,marginBottom:16}}>Ingresá a tu cuenta</div>
+        <input value={u} onChange={e=>setU(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Usuario (ej: juan.garcia)" style={{...inStyle,marginBottom:11}}/>
+        <input type="password" value={p} onChange={e=>setP(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Contraseña" style={{...inStyle,marginBottom:err?10:16}}/>
+        {err&&<div style={{background:"#fce8e8",border:`1px solid ${C.danger}44`,borderRadius:8,padding:"8px 12px",fontSize:13,color:C.danger,marginBottom:14}}>{err}</div>}
+        <Btn onClick={go} disabled={load} style={{width:"100%"}}>{load?"Verificando…":"Ingresar"}</Btn>
+        {!window.firebaseConfigured&&<div style={{marginTop:18,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
+          <div style={{fontSize:12,color:C.warn,fontWeight:700,marginBottom:8}}>⚠️ Modo demo (sin Firebase) — probá las 3 vistas:</div>
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            <Btn sm kind="ghost" onClick={()=>demo("supervisor")}>🎯 Entrar como Supervisor</Btn>
+            <Btn sm kind="ghost" onClick={()=>demo("gestor")}>👷 Entrar como Gestor</Btn>
+            <Btn sm kind="ghost" onClick={()=>demo("ingreso")}>🌱 Entrar como Gestor nuevo</Btn>
+          </div>
+        </div>}
+      </div>
+    </div>
+  </div>;
+}
+
+function Shell({user,onLogout}){
+  const esSuper=user.role==="supervisor";
+  const [tab,setTab]=useState(esSuper?"cursos":"mi");
+  // Embebido = está dentro de un iframe (integrado en la plataforma principal) → ocultamos el header propio.
+  const embebido=(function(){ try{ return window.self!==window.top; }catch(e){ return true; } })();
+  return <div style={{minHeight:embebido?"auto":"100vh",background:embebido?"transparent":C.bg}}>
+    {!embebido&&<div style={{background:C.dark,color:"#fff",padding:"12px 22px",display:"flex",alignItems:"center",gap:16}}>
+      <div style={{fontWeight:800,letterSpacing:1}}>DASA · <span style={{color:C.light}}>Capacitación</span></div>
+      {esSuper&&<div style={{display:"flex",gap:6,marginLeft:16}}>
+        <NavBtn on={tab==="cursos"} onClick={()=>setTab("cursos")}>📚 Cursos</NavBtn>
+        <NavBtn on={tab==="seg"} onClick={()=>setTab("seg")}>📊 Seguimiento</NavBtn>
+      </div>}
+      <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:12,fontSize:13}}>
+        <span style={{opacity:.85}}>{user.name||user.user} · {user.role}</span>
+        <button onClick={onLogout} style={{background:"rgba(255,255,255,.15)",color:"#fff",border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13}}>Salir</button>
+      </div>
+    </div>}
+    {embebido&&esSuper&&<div style={{display:"flex",gap:6,marginBottom:16}}>
+      <NavBtn dark on={tab==="cursos"} onClick={()=>setTab("cursos")}>📚 Cursos</NavBtn>
+      <NavBtn dark on={tab==="seg"} onClick={()=>setTab("seg")}>📊 Seguimiento</NavBtn>
+    </div>}
+    <div style={{padding:embebido?"4px 2px 30px":"26px 22px",maxWidth:960,margin:"0 auto"}}>
+      {esSuper?(tab==="cursos"?<CursosAdmin/>:<Seguimiento/>):<MiCapacitacion user={user}/>}
+    </div>
+  </div>;
+}
+const NavBtn=({on,onClick,children,dark})=><button onClick={onClick} style={{background:on?C.green:(dark?C.pale:"transparent"),color:on?"#fff":(dark?C.dark:"#fff"),border:"none",borderRadius:8,padding:"6px 13px",cursor:"pointer",fontSize:13.5,fontWeight:600,opacity:on?1:(dark?1:.75)}}>{children}</button>;
+
+function App(){
+  const [user,setUser]=useState(null);
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{
+    if(window.firebaseConfigured){
+      const unsub=window.auth.onAuthStateChanged(async fu=>{
+        if(fu){ try{ const d=await window.db.collection("usuarios").doc(fu.uid).get(); setUser(d.exists?{...d.data(),uid:fu.uid,email:fu.email}:null); }catch(e){ setUser(null); } }
+        else setUser(null);
+        setLoading(false);
+      });
+      return ()=>unsub();
+    } else setLoading(false);
+  },[]);
+  const logout=async()=>{ if(window.firebaseConfigured) await window.auth.signOut(); setUser(null); };
+  if(loading) return <div style={{minHeight:"100vh",background:C.dark,display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,.7)"}}>Cargando…</div>;
+  return user?<Shell user={user} onLogout={logout}/>:<Login onLogin={setUser}/>;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

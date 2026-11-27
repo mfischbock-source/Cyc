@@ -1,0 +1,5 @@
+# DASA C&C v2 — solo afecta a /v2/. El .htaccess de la raíz bloquea el login con Google (ventana emergente de Firebase):
+# falta apis.google.com en script-src y no hay frame-src. Acá se redefine la CSP (Header set pisa la del padre).
+<IfModule mod_headers.c>
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdnjs.cloudflare.com https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://dasaargentina.com data: https:; connect-src 'self' https://*.googleapis.com https://*.dasaargentina.com http://192.168.0.245 http://localhost; frame-src https://dasa-calidad.firebaseapp.com https://accounts.google.com; font-src 'self' data:;"
+</IfModule>
