@@ -231,16 +231,22 @@
     </div>;
   }
 
-  function IndicadoresBusqueda(props) { // {total, filas, resultadosMap, metodoId, resolver}
-    var analizadas = [];
+  // Resultados guardados de una llamada (analisis_v2), del más nuevo al más viejo.
+  function resultadosDe(resultadosMap, grabacion) {
+    var out = [];
+    Object.keys(resultadosMap).forEach(function (id) { var r = resultadosMap[id]; if (r && r.grabacion === grabacion) out.push(r); });
+    out.sort(function (a, b) { return String(b.analizadoEn || "").localeCompare(String(a.analizadoEn || "")); });
+    return out;
+  }
+
+  function IndicadoresBusqueda(props) { // {total, filas, resultadosMap}
+    var ultimos = [];
     (props.filas || []).forEach(function (f) {
-      if (f.sinGrabacion || !props.metodoId) return;
-      var m = props.resolver(f);
-      if (!m || !m.id) return;
-      var r = props.resultadosMap[V2.idResultado(f.grabacion, m.id)];
-      if (r) analizadas.push(r);
+      if (f.sinGrabacion) return;
+      var lista = resultadosDe(props.resultadosMap, f.grabacion);
+      if (lista.length) ultimos.push(lista[0]);
     });
-    var conScore = analizadas.filter(function (r) { return typeof r.score === "number"; });
+    var conScore = ultimos.filter(function (r) { return r.es_valida !== false && typeof r.score === "number"; });
     var prom = conScore.length ? Math.round(conScore.reduce(function (s, r) { return s + r.score; }, 0) / conScore.length) : null;
     var riesgo = conScore.filter(function (r) { return r.score < 70; }).length;
     var item = function (val, label, title) {
@@ -248,8 +254,8 @@
     };
     return <div className="v2-kpis">
       {item(props.total, "llamadas encontradas")}
-      {item(analizadas.length, "ya analizadas" + (props.metodoId ? " con este método" : " (elegí un método)"), "Con el método elegido, en esta página")}
-      {item(prom, "score promedio", "Promedio de las analizadas en esta página")}
+      {item(ultimos.length, "ya analizadas", "En esta página, con cualquier tipo de análisis")}
+      {item(prom, "score promedio", "Promedio del último análisis de cada llamada, en esta página")}
       {item(riesgo, "en riesgo (<70)", "De las analizadas en esta página")}
     </div>;
   }
@@ -282,32 +288,36 @@
 
   function ChipResultado(props) { // {resultado, onClick}
     var r = props.resultado;
+    var tit = (r.metodoTitulo || "") + (r.analizadoEn ? (" · " + V2.fmtFecha(r.analizadoEn)) : "");
     if (r.es_valida === false) {
       var motivo = (r.analisis && (r.analisis.motivo_invalida || r.analisis.motivo)) || "sin motivo";
-      return <button type="button" className={claseScore(r)} title={motivo} onClick={props.onClick}>No apta</button>;
+      return <button type="button" className={claseScore(r)} title={tit + " · " + motivo} onClick={props.onClick}>No apta</button>;
     }
     var s = typeof r.score === "number" ? r.score : null;
-    if (s === null) return <button type="button" className={claseScore(r)} onClick={props.onClick}>Sin score</button>;
-    return <button type="button" className={claseScore(r)} onClick={props.onClick}>{Math.round(s)} · {V2.scoreLabel(s)}</button>;
+    if (s === null) return <button type="button" className={claseScore(r)} title={tit} onClick={props.onClick}>Sin score</button>;
+    return <button type="button" className={claseScore(r)} title={tit} onClick={props.onClick}>{Math.round(s)} · {V2.scoreLabel(s)}</button>;
   }
 
-  function CeldaAnalisis(props) { // {fila, metodoId, resultadosMap, procesando, errorFila, onAnalizar, onReintentar, onAbrirModal}
+  var estiloBotonAnalizar = { font: "inherit", fontSize: 12, fontWeight: 600, color: V2.C.green, background: "none", border: "1px dashed " + V2.C.paleB, borderRadius: 6, padding: "3px 9px", cursor: "pointer" };
+
+  function CeldaAnalisis(props) { // {fila, resultados, procesando, errorFila, onAnalizar, onReintentar, onAbrirModal}
     var f = props.fila;
     if (f.sinGrabacion) return <span className="v2-sub">—</span>;
     if (props.procesando) return <span style={{ fontSize: 11, color: V2.C.info }}>{props.procesando}</span>;
     if (props.audioFaltante) return <span style={{ fontSize: 11, color: V2.C.danger }} title="El servidor no encontró la grabación (ni suelta ni en los ZIP del NAS). Las llamadas del día se copian al NAS de noche.">🔇 Sin audio en el NAS <a onClick={props.onAudioRevisar} style={{ cursor: "pointer" }}>Revisar de nuevo</a></span>;
     if (props.errorFila) return <span style={{ fontSize: 11, color: V2.C.danger }}>{props.errorFila} <a onClick={props.onReintentar} style={{ cursor: "pointer" }}>Reintentar</a></span>;
-    if (!props.metodoId) return <span className="v2-sub" title="Elegí un método de análisis en la barra de acciones">Elegí un método</span>;
-    var m = props.resolver(f);
-    if (!m || !m.id) return <span style={{ fontSize: 11, color: V2.C.warn }} title={(m && m.ayuda) || ""}>{(m && m.falta) || "—"}</span>;
-    var id = V2.idResultado(f.grabacion, m.id);
-    var r = props.resultadosMap[id];
-    if (r) return <ChipResultado resultado={r} onClick={function () { props.onAbrirModal(r, f); }} />;
-    if (!V2.puede("analizar")) return <span className="v2-sub" title="Tu rol no puede disparar análisis">—</span>;
-    return <button type="button" onClick={props.onAnalizar}
-      style={{ font: "inherit", fontSize: 12, fontWeight: 600, color: V2.C.green, background: "none", border: "1px dashed " + V2.C.paleB, borderRadius: 6, padding: "3px 9px", cursor: "pointer" }}>
-      Analizar
-    </button>;
+    var lista = props.resultados || [];
+    var puede = V2.puede("analizar");
+    if (lista.length) {
+      var r = lista[0];
+      return <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <ChipResultado resultado={r} onClick={function () { props.onAbrirModal(r, f, lista); }} />
+        {lista.length > 1 && <a className="v2-sub" style={{ cursor: "pointer", margin: 0 }} title="Ver todos los análisis de esta llamada" onClick={function () { props.onAbrirModal(r, f, lista); }}>+{lista.length - 1}</a>}
+        {puede && <a style={{ cursor: "pointer", fontSize: 11 }} title="Hacer otro análisis de esta llamada" onClick={props.onAnalizar}>Analizar</a>}
+      </span>;
+    }
+    if (!puede) return <span className="v2-sub" title="Tu rol no puede disparar análisis">—</span>;
+    return <button type="button" onClick={props.onAnalizar} style={estiloBotonAnalizar}>Analizar</button>;
   }
 
   function FilaResultado(props) {
@@ -328,7 +338,7 @@
         </td>
         <td data-label="Gestor">{V2.nombreOperador(props.mapaOps, f.usuario)}</td>
         <td data-label="Análisis">
-          <CeldaAnalisis fila={f} metodoId={props.metodoId} resolver={props.resolver} resultadosMap={props.resultadosMap}
+          <CeldaAnalisis fila={f} resultados={props.resultados}
             procesando={props.procesando} errorFila={props.errorFila} audioFaltante={props.audioFaltante} onAudioRevisar={props.onAudioRevisar}
             onAnalizar={props.onAnalizarUna} onReintentar={props.onReintentarUna} onAbrirModal={props.onAbrirModal} />
         </td>
@@ -337,30 +347,63 @@
     </React.Fragment>;
   }
 
+  // Columnas ordenables: clave → valor de una fila para comparar.
+  var COLUMNAS = [
+    { k: "cliente", t: "Cliente" }, { k: "inicio", t: "Fecha y hora" }, { k: "durSeg", t: "Duración" },
+    { k: "tipif", t: "Tipificación" }, { k: "deudor", t: "Deudor" }, { k: "gestor", t: "Gestor" }, { k: "analisis", t: "Análisis" }
+  ];
+  function valorOrden(f, col, ctx) {
+    if (col === "cliente") return String(f.cliente || "").toLowerCase();
+    if (col === "inicio") return String(f.inicio || "");
+    if (col === "durSeg") return +f.durSeg || 0;
+    if (col === "tipif") return String(f.tipif || "").toLowerCase();
+    if (col === "deudor") return String(f.titular || f.dni || "").toLowerCase();
+    if (col === "gestor") return V2.nombreOperador(ctx.mapaOps, f.usuario).toLowerCase();
+    if (col === "analisis") { var l = resultadosDe(ctx.resultadosMap, f.grabacion); var r = l[0]; return r && r.es_valida !== false && typeof r.score === "number" ? r.score : null; }
+    return "";
+  }
+  // Orden estable; los vacíos (sin análisis, sin tipificación…) siempre al final.
+  function ordenarFilas(filas, orden, ctx) {
+    if (!orden || !orden.col) return filas;
+    var signo = orden.dir === "asc" ? 1 : -1;
+    return filas.map(function (f, i) { return { f: f, i: i, v: valorOrden(f, orden.col, ctx) }; }).sort(function (a, b) {
+      var va = a.v, vb = b.v, vaVacio = va === null || va === "", vbVacio = vb === null || vb === "";
+      if (vaVacio !== vbVacio) return vaVacio ? 1 : -1;
+      if (!vaVacio && va !== vb) return (va < vb ? -1 : 1) * signo;
+      return a.i - b.i;
+    }).map(function (x) { return x.f; });
+  }
+
+  function EncabezadoOrden(props) { // {col, titulo, orden, onOrden}
+    var activa = props.orden && props.orden.col === props.col;
+    var flecha = activa ? (props.orden.dir === "asc" ? "▲" : "▼") : "↕";
+    var sig = activa && props.orden.dir === "asc" ? "desc" : (activa ? "asc" : (props.col === "inicio" || props.col === "durSeg" || props.col === "analisis" ? "desc" : "asc"));
+    return <th aria-sort={activa ? (props.orden.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" onClick={function () { props.onOrden({ col: props.col, dir: sig }); }}
+        title={"Ordenar por " + props.titulo.toLowerCase() + (sig === "asc" ? " (ascendente)" : " (descendente)")}
+        style={{ font: "inherit", color: "inherit", letterSpacing: "inherit", textTransform: "inherit", background: "none", border: 0, padding: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+        {props.titulo}<span aria-hidden="true" style={{ fontSize: 9, opacity: activa ? 1 : 0.45 }}>{flecha}</span>
+      </button>
+    </th>;
+  }
+
   function TablaResultados(props) {
     var filas = props.filas || [];
     var seleccionables = filas.filter(function (f) { return !f.sinGrabacion && !props.audioFaltante[f.grabacion]; });
     var todasMarcadas = seleccionables.length > 0 && seleccionables.every(function (f) { return !!props.seleccion[f.grabacion]; });
-    var colAnalisis = "Análisis" + (props.metodoTitulo ? (" · " + props.metodoTitulo) : "");
     return <div className="v2-tabla-caja">
       <table className="v2-tabla v2-tarjetas v2-tabla-res">
         <thead><tr>
-          <th><input type="checkbox" checked={todasMarcadas} onChange={function () { props.onToggleTodasPagina(seleccionables, !todasMarcadas); }} style={{ accentColor: V2.C.green }} /></th>
+          <th><input type="checkbox" aria-label="Tildar todas las de esta página" checked={todasMarcadas} onChange={function () { props.onToggleTodasPagina(seleccionables, !todasMarcadas); }} style={{ accentColor: V2.C.green }} /></th>
           <th></th>
-          <th>Cliente</th>
-          <th>Fecha y hora</th>
-          <th>Duración</th>
-          <th>Tipificación</th>
-          <th>Deudor</th>
-          <th>Gestor</th>
-          <th>{colAnalisis}</th>
+          {COLUMNAS.map(function (c) { return <EncabezadoOrden key={c.k} col={c.k} titulo={c.t} orden={props.orden} onOrden={props.onOrden} />; })}
         </tr></thead>
         <tbody>
           {filas.map(function (f) {
             return <FilaResultado key={f.grabacion || f.idLlamada} fila={f} mapaOps={props.mapaOps}
               seleccionada={props.seleccion[f.grabacion]} onToggleSel={function () { props.onToggleSel(f); }}
               expandida={props.filaExpandida === f.grabacion} onTogglePlay={function () { props.onTogglePlay(f.grabacion); }}
-              metodoId={props.metodoId} resolver={props.resolver} resultadosMap={props.resultadosMap}
+              resultados={f.sinGrabacion ? [] : resultadosDe(props.resultadosMap, f.grabacion)}
               procesando={props.procesandoFila[f.grabacion]} errorFila={props.erroresFila[f.grabacion]}
               audioFaltante={props.audioFaltante[f.grabacion]} onAudioFaltante={function () { props.onAudioFaltante(f.grabacion); }} onAudioRevisar={function () { props.onAudioRevisar(f.grabacion); }}
               onAnalizarUna={function () { props.onAnalizarUna(f); }} onReintentarUna={function () { props.onReintentarUna(f); }}
@@ -374,63 +417,69 @@
 
   function BarraAcciones(props) {
     var n = props.seleccionCount;
-    var selMetodo = <select value={props.metodoId} onChange={function (e) { props.setMetodoId(e.target.value); }}>
-      <option value={MODO_CLIENTE}>Según parámetro del cliente</option>
-      <option value={MODO_MEDIDA}>Análisis a medida (escribir prompt)</option>
-    </select>;
-    if (!n) {
-      // Sin tildadas: el método igual se puede elegir (define qué muestra la columna Análisis y el botón "Analizar" de cada fila).
-      if (!props.hayResultado) return null;
-      return <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 10px", fontSize: 13, color: V2.C.muted }}>
-        <span>Método de análisis:</span>{selMetodo}
-        <span className="v2-sub">{props.metodoId === MODO_MEDIDA ? "Escribí abajo el prompt: se usa solo para este análisis."
-          : "Cada llamada se analiza con el prompt de su cliente (Configuración → Parámetros de análisis por cliente)."}</span>
-      </div>;
-    }
-    var estMin = Math.max(1, Math.round(n * 30 / 60));
+    if (!n && !props.colaActiva) return null;
     return <div className="v2-acciones" role="region" aria-label="Acciones sobre las tildadas">
       <span className="v2-cuenta">{n} tildada{n === 1 ? "" : "s"}</span>
-      {selMetodo}
-      {!props.confirmando && V2.puede("analizar") && <V2.Boton disabled={!props.metodoId || props.colaActiva || (props.metodoId === MODO_MEDIDA && !props.promptMedidaListo)} onClick={props.onPedirAnalizar}>Analizar {n}</V2.Boton>}
-      {props.confirmando && <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <span style={{ fontSize: 12 }}>¿Analizar {n}? ≈{estMin} min.</span>
-        <V2.Boton chico onClick={props.onConfirmarAnalizar}>Confirmar</V2.Boton>
-        <V2.Boton chico tipo="secundario" onClick={props.onCancelarConfirmacion}>Cancelar</V2.Boton>
+      {V2.puede("analizar") && n > 0 && <V2.Boton disabled={props.colaActiva} onClick={props.onPedirAnalizar}>Analizar {n}…</V2.Boton>}
+      {n > 0 && <V2.Boton tipo="secundario" onClick={props.onDescargar}>Descargar grabaciones ({n})</V2.Boton>}
+      {n > 0 && <V2.Boton tipo="secundario" onClick={props.onDestildar}>Destildar</V2.Boton>}
+      {props.colaActiva && <span style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,.75)" }}>
+        {"Analizando " + props.progreso.hechas + "/" + props.progreso.total + "… "}
+        <a onClick={props.onCancelarCola} style={{ cursor: "pointer", color: "#fff", textDecoration: "underline" }}>Cancelar</a>
       </span>}
-      <V2.Boton tipo="secundario" onClick={props.onDescargar}>Descargar grabaciones ({n})</V2.Boton>
-      <V2.Boton tipo="secundario" onClick={props.onDestildar}>Destildar</V2.Boton>
-      <span style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,.75)" }}>
-        {props.colaActiva ? ("Analizando " + props.progreso.hechas + "/" + props.progreso.total + "… ") : ("≈ " + estMin + " min · se puede cancelar")}
-        {props.colaActiva && <a onClick={props.onCancelarCola} style={{ cursor: "pointer", color: "#fff", textDecoration: "underline" }}>Cancelar</a>}
-      </span>
     </div>;
   }
 
-  // Prompt escrito en el momento ("Análisis a medida"). Queda guardado en este navegador como borrador.
-  function PromptMedida(props) { // {valor, onCambiar}
-    return <div className="v2-tarjeta" style={{ marginBottom: 10 }}>
-      <label htmlFor="buscar-prompt-medida" style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Prompt del análisis a medida</label>
-      <div className="v2-sub" style={{ marginBottom: 8 }}>Indicá qué querés evaluar en estas llamadas (criterios y pesos). Si analizás con el mismo texto, se reusan los resultados ya hechos.</div>
-      <textarea id="buscar-prompt-medida" value={props.valor} onChange={function (e) { props.onCambiar(e.target.value); }} rows={6}
-        placeholder={"Ejemplo: Evaluá si el gestor ofreció el plan de 6 cuotas sin interés (peso 50) y si confirmó el mail del titular (peso 50)."}
-        style={Object.assign({}, V2.estiloInput, { width: "100%", boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.5, resize: "vertical" })} />
-    </div>;
-  }
-
-  // Con "Según parámetro del cliente": avisa qué clientes de la página no tienen prompt definido.
-  function AvisoParametros(props) { // {filas, params}
-    var faltan = {};
-    (props.filas || []).forEach(function (f) {
-      if (f.sinGrabacion || !f.cliente) return;
-      var p = props.params[f.cliente];
-      if (!p || !String(p.prompt || "").trim()) faltan[f.cliente] = (faltan[f.cliente] || 0) + 1;
-    });
-    var lista = Object.keys(faltan);
-    if (!lista.length) return null;
-    return <V2.Aviso tipo="alerta">
-      Sin parámetro de análisis: {lista.map(function (c) { return c + " (" + faltan[c] + ")"; }).join(" · ")}. Esas llamadas no se pueden analizar
-      {V2.puede("metodos") ? <span> hasta que lo definas en <a style={{ cursor: "pointer" }} onClick={function () { V2.irA("parametros"); }}>Configuración → Parámetros de análisis por cliente</a>.</span> : " hasta que un administrador lo defina."}
-    </V2.Aviso>;
+  // ── Elegir el tipo de análisis (una llamada o varias tildadas) ─────────────────────────
+  function ModalElegirAnalisis(props) { // {filas, params, modo, setModo, promptMedida, setPromptMedida, onConfirmar, onCerrar}
+    var filas = props.filas || [];
+    var n = filas.length;
+    var estMin = Math.max(1, Math.round(n * 30 / 60));
+    var porCliente = {};
+    filas.forEach(function (f) { var c = f.cliente || "Sin cliente"; porCliente[c] = (porCliente[c] || 0) + 1; });
+    var clientes = Object.keys(porCliente).sort();
+    var tieneParam = function (c) { var p = props.params[c]; return !!(p && String(p.prompt || "").trim()); };
+    var analizablesCliente = filas.filter(function (f) { return tieneParam(f.cliente); }).length;
+    var esCliente = props.modo === MODO_CLIENTE;
+    var listo = esCliente ? analizablesCliente > 0 : !!props.promptMedida.trim();
+    var cantidad = esCliente ? analizablesCliente : n;
+    var opcion = function (valor, titulo, texto) {
+      var on = props.modo === valor;
+      return <label style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", border: "1px solid " + (on ? V2.C.green : V2.C.border), background: on ? V2.C.pale : V2.C.white, borderRadius: 8, cursor: "pointer" }}>
+        <input type="radio" name="tipo-analisis" checked={on} onChange={function () { props.setModo(valor); }} style={{ marginTop: 3, accentColor: V2.C.green }} />
+        <span><b style={{ fontSize: 14 }}>{titulo}</b><span className="v2-sub" style={{ display: "block" }}>{texto}</span></span>
+      </label>;
+    };
+    return <V2.Modal titulo={n === 1 ? "Analizar llamada" : ("Analizar " + n + " llamadas")} onCerrar={props.onCerrar} ancho={620}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="v2-sub">Elegí con qué prompt se analiza{n === 1 ? " la llamada" : "n las llamadas"}.</div>
+        {opcion(MODO_CLIENTE, "Parámetro de análisis por cliente", "Cada llamada se analiza con el prompt definido para su cliente en Configuración.")}
+        {esCliente && <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, padding: "0 4px" }}>
+          {clientes.map(function (c) {
+            var ok = tieneParam(c);
+            return <div key={c} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <span>{c} <span className="v2-sub" style={{ display: "inline" }}>({porCliente[c]})</span></span>
+              {ok ? <V2.Chip color={V2.C.ok}>Con parámetro</V2.Chip> : <V2.Chip color={V2.C.warn}>Sin parámetro: no se analiza</V2.Chip>}
+            </div>;
+          })}
+          {clientes.some(function (c) { return !tieneParam(c); }) && <div className="v2-sub" style={{ marginTop: 2 }}>
+            {V2.puede("metodos") ? <span>Podés definirlo en <a style={{ cursor: "pointer" }} onClick={function () { props.onCerrar(); V2.irA("parametros"); }}>Configuración → Parámetros de análisis por cliente</a>.</span> : "Pedile a un administrador que lo defina."}
+          </div>}
+        </div>}
+        {opcion(MODO_MEDIDA, "Análisis a medida", "Escribís ahora el prompt; se usa para todas las llamadas elegidas.")}
+        {!esCliente && <div>
+          <textarea id="buscar-prompt-medida" aria-label="Prompt del análisis a medida" value={props.promptMedida} onChange={function (e) { props.setPromptMedida(e.target.value); }} rows={6} autoFocus
+            placeholder={"Ejemplo: Evaluá si el gestor ofreció el plan de 6 cuotas sin interés (peso 50) y si confirmó el mail del titular (peso 50)."}
+            style={Object.assign({}, V2.estiloInput, { width: "100%", boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.5, resize: "vertical" })} />
+          <div className="v2-sub">El texto queda guardado en este navegador para la próxima vez.</div>
+        </div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", borderTop: "1px solid " + V2.C.border, paddingTop: 12, marginTop: 2 }}>
+          <V2.Boton disabled={!listo} onClick={props.onConfirmar}>Analizar {cantidad === 1 ? "1 llamada" : (cantidad + " llamadas")}</V2.Boton>
+          <V2.Boton tipo="secundario" onClick={props.onCerrar}>Cancelar</V2.Boton>
+          <span className="v2-sub" style={{ marginLeft: "auto" }}>≈ {estMin} min · usa crédito de OpenAI y Anthropic · si ya se hizo el mismo análisis, no se repite</span>
+        </div>
+      </div>
+    </V2.Modal>;
   }
 
   // ═══════════════════════════ Modal de score ═══════════════════════════════════════════
@@ -492,6 +541,14 @@
           <div style={{ fontWeight: 700 }}>{s !== null ? V2.scoreLabel(s) : "Sin score"}</div>
           <span className="v2-sub">{r.metodoTitulo || "—"} · analizado el {fechaAn}{r.analizadoPor ? (" por " + r.analizadoPor) : ""}</span>
         </div>
+        {props.lista && props.lista.length > 1 && props.onElegir && <label style={{ marginLeft: "auto", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+          <span className="v2-sub" style={{ display: "inline" }}>{props.lista.length} análisis de esta llamada:</span>
+          <select value={props.lista.indexOf(r)} onChange={function (e) { props.onElegir(props.lista[+e.target.value]); }} style={V2.estiloInput}>
+            {props.lista.map(function (x, i) {
+              return <option key={i} value={i}>{(x.metodoTitulo || "—") + " · " + V2.fmtFecha(x.analizadoEn) + (typeof x.score === "number" && x.es_valida !== false ? (" · " + Math.round(x.score)) : " · no apta")}</option>;
+            })}
+          </select>
+        </label>}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: "8px 16px", fontSize: 12.5 }}>
@@ -556,23 +613,25 @@
     var stSel = useState({}); var seleccion = stSel[0], setSeleccion = stSel[1];
     var stExp = useState(""); var filaExpandida = stExp[0], setFilaExpandida = stExp[1];
 
-    // Solo hay dos modos (los "Métodos de análisis" guardados se sacaron el 27/11/2026): cualquier otro valor guardado vuelve a "por cliente".
-    var stMetodoId = useState(function () { var v = ""; try { v = localStorage.getItem(LS_METODO) || ""; } catch (e) {} return v === MODO_MEDIDA ? MODO_MEDIDA : MODO_CLIENTE; });
-    var metodoId = stMetodoId[0], setMetodoIdRaw = stMetodoId[1];
-    var setMetodoId = function (id) { setMetodoIdRaw(id); try { localStorage.setItem(LS_METODO, id); } catch (e) {} };
+    // Tipo de análisis que se elige al tocar "Analizar": por cliente o a medida (se recuerda el último).
+    var stModo = useState(function () { var v = ""; try { v = localStorage.getItem(LS_METODO) || ""; } catch (e) {} return v === MODO_MEDIDA ? MODO_MEDIDA : MODO_CLIENTE; });
+    var modoAnalisis = stModo[0], setModoRaw = stModo[1];
+    var setModoAnalisis = function (m) { setModoRaw(m); try { localStorage.setItem(LS_METODO, m); } catch (e) {} };
+    var stElegir = useState(null); var elegir = stElegir[0], setElegir = stElegir[1];   // filas para las que se está eligiendo el tipo de análisis
+    var stOrden = useState({ col: "inicio", dir: "desc" }); var orden = stOrden[0], setOrden = stOrden[1];
     var stParams = useState({}); var paramsCliente = stParams[0], setParamsCliente = stParams[1];   // cliente -> {prompt,…}
     var stPM = useState(function () { try { return localStorage.getItem(LS_PROMPT_MEDIDA) || ""; } catch (e) { return ""; } });
     var promptMedida = stPM[0], setPromptMedidaRaw = stPM[1];
     var setPromptMedida = function (t) { setPromptMedidaRaw(t); try { localStorage.setItem(LS_PROMPT_MEDIDA, t); } catch (e) {} };
 
     var stResMap = useState({}); var resultadosMap = stResMap[0], setResultadosMap = stResMap[1];
+    var resultadosRef = useRef({}); resultadosRef.current = resultadosMap;   // la cola corre con closures viejas
     var stProcFila = useState({}); var procesandoFila = stProcFila[0], setProcesandoFila = stProcFila[1];
     var stErrFila = useState({}); var erroresFila = stErrFila[0], setErroresFila = stErrFila[1];
     var stAudioF = useState({}); var audioFaltante = stAudioF[0], setAudioFaltante = stAudioF[1];
     var faltanteRef = useRef({});   // espejo síncrono de audioFaltante (la cola corre con closures viejas)
     var stProgreso = useState(null); var progreso = stProgreso[0], setProgreso = stProgreso[1];
     var stAvisoGeneral = useState(""); var avisoGeneral = stAvisoGeneral[0], setAvisoGeneral = stAvisoGeneral[1];
-    var stConfirmando = useState(false); var confirmando = stConfirmando[0], setConfirmando = stConfirmando[1];
     var pausaRef = useRef(false);
     var enCursoRef = useRef({});   // grabaciones en proceso (lock contra análisis duplicados)
 
@@ -626,14 +685,14 @@
       };
     };
 
-    var cargarResultadosDePagina = function (filas, resolver) {
-      if (!resolver || !filas || !filas.length) return;
-      var ids = [];
-      filas.forEach(function (f) { if (f.sinGrabacion) return; var m = resolver(f); if (m && m.id) ids.push(V2.idResultado(f.grabacion, m.id)); });
-      var lotes = []; for (var i = 0; i < ids.length; i += 10) lotes.push(ids.slice(i, i + 10));
+    // Trae TODOS los análisis guardados de las llamadas de la página (cualquier tipo), de a 10 grabaciones.
+    var cargarResultadosDePagina = function (filas) {
+      if (!filas || !filas.length) return;
+      var grabs = filas.filter(function (f) { return !f.sinGrabacion && f.grabacion; }).map(function (f) { return f.grabacion; });
+      var lotes = []; for (var i = 0; i < grabs.length; i += 10) lotes.push(grabs.slice(i, i + 10));
       lotes.forEach(function (lote) {
         if (!lote.length) return;
-        V2.db.collection(V2.config.col.resultados).where(firebase.firestore.FieldPath.documentId(), "in", lote).get()
+        V2.db.collection(V2.config.col.resultados).where("grabacion", "in", lote).get()
           .then(function (sn) { var n = {}; sn.docs.forEach(function (d) { n[d.id] = d.data(); }); setResultadosMap(function (prev) { return Object.assign({}, prev, n); }); })
           .catch(function () {});
       });
@@ -644,7 +703,7 @@
       var body = armarBody(pagina);
       V2.api(V2.config.api.buscar, body, 60000).then(function (d) {
         setResultado(d); setBuscando(false);
-        cargarResultadosDePagina(d.filas || [], metodoId ? resolverMetodo : null);
+        cargarResultadosDePagina(d.filas || []);
       }).catch(function (e) { setBuscando(false); setErrBusq((e && e.message) || "Error buscando."); });
     };
 
@@ -661,13 +720,6 @@
       else if (k === "numeros") { setNumerosTexto(""); setMsgCarga(""); }
     };
     var onCargarArchivo = function (file) { leerArchivoNumeros(file, function (texto, msg) { if (texto !== null) setNumerosTexto(texto); setMsgCarga(msg); }); };
-
-    // Al cambiar de método, de parámetros o de prompt a medida: traer los resultados ya guardados (con pausa, por el tipeo).
-    useEffect(function () {
-      if (!resultado || !resultado.filas || !metodoId) return;
-      var to = setTimeout(function () { cargarResultadosDePagina(resultado.filas, resolverMetodo); }, metodoId === MODO_MEDIDA ? 700 : 0);
-      return function () { clearTimeout(to); };
-    }, [metodoId, paramsCliente, promptMedida]);
 
     var onToggleSel = function (f) { setSeleccion(function (prev) { var n = Object.assign({}, prev); if (n[f.grabacion]) delete n[f.grabacion]; else n[f.grabacion] = true; return n; }); };
     var onToggleTodasPagina = function (seleccionables, marcar) {
@@ -688,21 +740,19 @@
       setAudioFaltante(function (p) { var n = Object.assign({}, p); delete n[grab]; return n; });
     };
 
-    var tituloMetodo = metodoId === MODO_MEDIDA ? "A medida" : "Por cliente";
-
-    // Qué prompt corresponde a cada llamada según el método elegido. Devuelve
+    // Qué prompt corresponde a cada llamada según el tipo de análisis elegido. Devuelve
     // {id, titulo, prompt, cliente, modo} o {falta, ayuda} si no se puede analizar.
-    var resolverMetodo = function (fila) {
-      if (metodoId === MODO_CLIENTE) {
+    var resolverMetodo = function (fila, modo) {
+      if (modo === MODO_CLIENTE) {
         var p = paramsCliente[fila.cliente];
         if (!p || !String(p.prompt || "").trim()) return { falta: "Sin parámetro para " + (fila.cliente || "este cliente"), ayuda: "Definilo en Configuración → Parámetros de análisis por cliente." };
         return { id: "param-" + V2.slugCliente(fila.cliente), titulo: "Parámetro " + fila.cliente, prompt: p.prompt, cliente: fila.cliente, modo: "cliente" };
       }
-      if (metodoId === MODO_MEDIDA) {
-        if (!promptMedida.trim()) return { falta: "Escribí el prompt", ayuda: "Completá el prompt a medida arriba de la grilla." };
+      if (modo === MODO_MEDIDA) {
+        if (!promptMedida.trim()) return { falta: "Falta el prompt a medida" };
         return { id: "medida-" + V2.hashTexto(promptMedida.trim()), titulo: "A medida", prompt: promptMedida.trim(), cliente: fila.cliente, modo: "medida" };
       }
-      return { falta: "Elegí un método" };
+      return { falta: "Elegí el tipo de análisis" };
     };
 
     // El contrato manda {error, codigo} con HTTP 4xx/5xx — V2.api ya lo convierte en excepción con .codigo.
@@ -787,9 +837,12 @@
           if (!f) return Promise.resolve();
           var metodo = resolver(f);
           if (!metodo || !metodo.id) {
-            setErroresFila(function (p) { var n = Object.assign({}, p); n[f.grabacion] = "⚠ " + ((metodo && metodo.falta) || "Sin método"); return n; });
+            setErroresFila(function (p) { var n = Object.assign({}, p); n[f.grabacion] = "⚠ " + ((metodo && metodo.falta) || "Sin tipo de análisis"); return n; });
             hechas++; setProgreso({ hechas: hechas, total: total }); return siguiente();
           }
+          // Mismo análisis ya hecho con el mismo prompt: no se vuelve a pagar.
+          var previo = resultadosRef.current[V2.idResultado(f.grabacion, metodo.id)];
+          if (previo && previo.promptUsado === metodo.prompt) { hechas++; setProgreso({ hechas: hechas, total: total }); return siguiente(); }
           return analizarFilaSegura(f, metodo).then(function () { hechas++; setProgreso({ hechas: hechas, total: total }); return siguiente(); });
         };
         return siguiente();
@@ -797,17 +850,20 @@
       return Promise.all([worker(), worker()]).then(function () { setProgreso(null); });
     };
 
-    var onAnalizarUna = function (fila) { if (metodoId && !faltanteRef.current[fila.grabacion]) ejecutarCola([fila], resolverMetodo); };
-    var onReintentarUna = function (fila) { if (metodoId) ejecutarCola([fila], resolverMetodo); };
-    var onPedirAnalizar = function () { if (seleccionCount > 10) setConfirmando(true); else onConfirmarAnalizar(); };
-    var onConfirmarAnalizar = function () {
-      setConfirmando(false);
-      var filas = (resultado && resultado.filas || []).filter(function (f) { return seleccion[f.grabacion] && !f.sinGrabacion && !faltanteRef.current[f.grabacion]; });
-      ejecutarCola(filas, resolverMetodo);
+    // "Analizar" (una fila o las tildadas) abre la ventana para elegir el tipo de análisis.
+    var onAnalizarUna = function (fila) { if (!faltanteRef.current[fila.grabacion]) setElegir([fila]); };
+    var onReintentarUna = function (fila) { setElegir([fila]); };
+    var onPedirAnalizar = function () {
+      var filasSel = (resultado && resultado.filas || []).filter(function (f) { return seleccion[f.grabacion] && !f.sinGrabacion && !faltanteRef.current[f.grabacion]; });
+      if (filasSel.length) setElegir(filasSel);
     };
-    var onCancelarConfirmacion = function () { setConfirmando(false); };
+    var onConfirmarElegir = function () {
+      var filasA = elegir || [], modo = modoAnalisis;
+      setElegir(null);
+      ejecutarCola(filasA, function (f) { return resolverMetodo(f, modo); });
+    };
     var onCancelarCola = function () { pausaRef.current = true; };
-    var onAbrirModal = function (r, f) { setModal({ resultado: r, fila: f }); };
+    var onAbrirModal = function (r, f, lista) { setModal({ resultado: r, fila: f, lista: lista || null }); };
 
     var onDescargar = function () {
       var filas = (resultado && resultado.filas || []).filter(function (f) { return seleccion[f.grabacion] && !f.sinGrabacion; });
@@ -853,15 +909,11 @@
 
           <ChipsFiltros filtros={filtros} numerosTexto={numerosTexto} carterasIndex={carterasIndex} onQuitar={onQuitarChip} onLimpiar={onLimpiar} />
 
-          {resultado && <IndicadoresBusqueda total={resultado.total} filas={filas} resultadosMap={resultadosMap} metodoId={metodoId} resolver={resolverMetodo} />}
+          {resultado && <IndicadoresBusqueda total={resultado.total} filas={filas} resultadosMap={resultadosMap} />}
 
-          <BarraAcciones seleccionCount={seleccionCount} hayResultado={!!resultado && !buscando} metodoId={metodoId} setMetodoId={setMetodoId}
-            confirmando={confirmando} onPedirAnalizar={onPedirAnalizar} onConfirmarAnalizar={onConfirmarAnalizar} onCancelarConfirmacion={onCancelarConfirmacion}
+          <BarraAcciones seleccionCount={seleccionCount} onPedirAnalizar={onPedirAnalizar}
             colaActiva={!!progreso} progreso={progreso || { hechas: 0, total: 0 }} onCancelarCola={onCancelarCola}
-            onDescargar={onDescargar} onDestildar={onDestildar} promptMedidaListo={!!promptMedida.trim()} />
-
-          {resultado && !buscando && metodoId === MODO_MEDIDA && <PromptMedida valor={promptMedida} onCambiar={setPromptMedida} />}
-          {resultado && !buscando && metodoId === MODO_CLIENTE && <AvisoParametros filas={filas} params={paramsCliente} />}
+            onDescargar={onDescargar} onDestildar={onDestildar} />
 
           {buscando && <V2.Cargando texto="Buscando llamadas…" />}
 
@@ -872,12 +924,13 @@
               Sin resultados para: {Object.keys(resultado.explicaciones).map(function (n) { return n + " (" + resultado.explicaciones[n] + ")"; }).join(" · ")}
             </V2.Aviso>}
 
-            <TablaResultados filas={filas} mapaOps={mapaOps} seleccion={seleccion} onToggleSel={onToggleSel} onToggleTodasPagina={onToggleTodasPagina}
-              filaExpandida={filaExpandida} onTogglePlay={onTogglePlay} metodoId={metodoId} resolver={resolverMetodo} metodoTitulo={tituloMetodo} resultadosMap={resultadosMap}
+            <TablaResultados filas={ordenarFilas(filas, orden, { mapaOps: mapaOps, resultadosMap: resultadosMap })} orden={orden} onOrden={setOrden}
+              mapaOps={mapaOps} seleccion={seleccion} onToggleSel={onToggleSel} onToggleTodasPagina={onToggleTodasPagina}
+              filaExpandida={filaExpandida} onTogglePlay={onTogglePlay} resultadosMap={resultadosMap}
               procesandoFila={procesandoFila} erroresFila={erroresFila} audioFaltante={audioFaltante} onAudioFaltante={marcarAudioFaltante} onAudioRevisar={revisarAudio} onAnalizarUna={onAnalizarUna} onReintentarUna={onReintentarUna} onAbrirModal={onAbrirModal} />
 
             <div className="v2-sub" style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 2px", flexWrap: "wrap" }}>
-              <span>Mostrando {desdeN}–{hastaN} de {resultado.total} · búsqueda en {resultado.ms} ms</span>
+              <span>Mostrando {desdeN}–{hastaN} de {resultado.total} · búsqueda en {resultado.ms} ms{resultado.total > filas.length ? " · tocá el título de una columna para ordenar esta página" : " · tocá el título de una columna para ordenar"}</span>
               <span>
                 <V2.Boton tipo="secundario" chico disabled={resultado.pagina <= 1} onClick={function () { ejecutarBusqueda(resultado.pagina - 1); }}>Anterior</V2.Boton>{" "}
                 <V2.Boton tipo="secundario" chico disabled={!resultado.hayMas} onClick={function () { ejecutarBusqueda(resultado.pagina + 1); }}>Siguiente</V2.Boton>
@@ -894,7 +947,9 @@
         </div>
       </div>
 
-      {modal && <ModalScore resultado={modal.resultado} fila={modal.fila} mapaOps={mapaOps} onCerrar={function () { setModal(null); }} />}
+      {modal && <ModalScore resultado={modal.resultado} fila={modal.fila} lista={modal.lista} onElegir={function (r) { setModal(Object.assign({}, modal, { resultado: r })); }} mapaOps={mapaOps} onCerrar={function () { setModal(null); }} />}
+      {elegir && <ModalElegirAnalisis filas={elegir} params={paramsCliente} modo={modoAnalisis} setModo={setModoAnalisis}
+        promptMedida={promptMedida} setPromptMedida={setPromptMedida} onConfirmar={onConfirmarElegir} onCerrar={function () { setElegir(null); }} />}
     </div>;
   }
 
